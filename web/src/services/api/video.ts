@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { dataUrlToFile } from "@/lib/image-utils";
-import { isMinimaxVideoConfig, MINIMAX_REFERENCE_LIMITS, normalizeMinimaxDuration, normalizeMinimaxRatio, normalizeMinimaxResolution } from "@/lib/minimax-video";
+import { buildMinimaxVideoPayload, isMinimaxVideoConfig, minimaxVideoReferenceError, MINIMAX_REFERENCE_LIMITS } from "@/lib/minimax-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
@@ -222,17 +222,11 @@ async function createMinimaxTask(config: AiConfig, model: string, prompt: string
         throw new Error(apiText("minimaxAudioRequiresVisual"));
     }
     assertMinimaxVideoReferences(videoReferences);
-    const content = await buildMinimaxContent(config, prompt, references, videoReferences, audioReferences);
-    if (!content.length) throw new Error(apiText("videoPromptRequired"));
-    const isTextOnly = content.every((item) => item.type === "text");
-    const isFrameMode = content.some((item) => item.role === "first_frame" || item.role === "last_frame");
-    const payload = {
-        model: modelOptionName(model),
-        content,
-        ratio: isFrameMode ? "adaptive" : isTextOnly && normalizeMinimaxRatio(config.size) === "adaptive" ? "16:9" : normalizeMinimaxRatio(config.size),
-        resolution: normalizeMinimaxResolution(config.vquality),
-        duration: normalizeMinimaxDuration(config.videoSeconds),
-    };
+    const imageUrls = await Promise.all(references.slice(0, MINIMAX_REFERENCE_LIMITS.images).map((image) => resolveSeedanceImageUrl(config, image)));
+    const videoUrls = await Promise.all(videoReferences.slice(0, MINIMAX_REFERENCE_LIMITS.videos).map((video) => resolveSeedanceVideoUrl(video)));
+    const audioUrls = await Promise.all(audioReferences.slice(0, MINIMAX_REFERENCE_LIMITS.audios).map((audio) => resolveSeedanceAudioUrl(audio)));
+    if (!prompt.trim() && !imageUrls.length && !videoUrls.length && !audioUrls.length) throw new Error(apiText("videoPromptRequired"));
+    const payload = buildMinimaxVideoPayload({ model: modelOptionName(model), prompt, imageUrls, videoUrls, audioUrls, ratio: config.size, resolution: config.vquality, duration: config.videoSeconds });
 
     try {
         const created = unwrapMinimaxResponse((await axios.post<ApiEnvelope<MinimaxTask>>(minimaxApiUrl(config, "/v2/video_generation"), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
@@ -271,25 +265,6 @@ function assertMinimaxVideoReferences(videoReferences: ReferenceVideo[]) {
 
 function minimaxApiUrl(config: AiConfig, path: string) {
     return `${config.baseUrl.trim().replace(/\/+$/, "")}${path}`;
-}
-
-async function buildMinimaxContent(config: AiConfig, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
-    const content: Array<Record<string, unknown>> = [];
-    const text = prompt.trim();
-    if (text) content.push({ type: "text", text });
-    const useFrameMode = !videoReferences.length && !audioReferences.length && references.length > 0 && references.length <= 2;
-    const imageLimit = MINIMAX_REFERENCE_LIMITS.images;
-    for (const [index, image] of references.slice(0, imageLimit).entries()) {
-        const role = useFrameMode ? (index === 0 ? "first_frame" : "last_frame") : "reference_image";
-        content.push({ type: "image_url", image_url: { url: await resolveSeedanceImageUrl(config, image) }, role });
-    }
-    for (const video of videoReferences.slice(0, MINIMAX_REFERENCE_LIMITS.videos)) {
-        content.push({ type: "video_url", video_url: { url: await resolveSeedanceVideoUrl(video) }, role: "reference_video" });
-    }
-    for (const audio of audioReferences.slice(0, MINIMAX_REFERENCE_LIMITS.audios)) {
-        content.push({ type: "audio_url", audio_url: { url: await resolveSeedanceAudioUrl(audio) }, role: "reference_audio" });
-    }
-    return content;
 }
 
 function assertSeedanceVideoReferences(videoReferences: ReferenceVideo[]) {

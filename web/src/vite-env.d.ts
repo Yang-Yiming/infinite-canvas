@@ -6,6 +6,8 @@ declare const __APP_RELEASES__: import("@/lib/release").ReleaseInfo[];
 interface ImportMetaEnv {
     // Comma-separated local development plugin URLs, refetched on every startup without caching or persistence.
     readonly VITE_DEV_PLUGINS?: string;
+    // Enables smoke mode: all backend requests are intercepted and shown in a modal instead of being sent.
+    readonly VITE_SMOKE_MODE?: string;
     // Optional build-time analytics configuration, with one independent variable per provider.
     // GA4 measurement ID (G-XXXX)
     readonly VITE_ANALYTICS_GA4_ID?: string;
