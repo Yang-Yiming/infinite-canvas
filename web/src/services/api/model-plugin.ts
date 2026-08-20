@@ -260,7 +260,7 @@ const task = await request({
 return await poll(
   () => request({ method: "get", url: \`\${baseUrl}/v1/videos/\${task.id}\`, headers }),
   (state) => state.status === "completed" ? { url: state.video_url || state.url } : null,
-  { intervalMs: 2500, timeoutMs: 300000 },
+  { intervalMs: 2500, timeoutMs: 1800000 },
 );`,
         },
         {
@@ -285,7 +285,7 @@ return await poll(
     if (!uri) throw new Error(${JSON.stringify(i18n.t("modelPlugin.templates.geminiNoVideoUri"))});
     return { url: uri.includes("key=") ? uri : \`\${uri}\${uri.includes("?") ? "&" : "?"}key=\${apiKey}\` };
   },
-  { intervalMs: 5000, timeoutMs: 300000 },
+  { intervalMs: 5000, timeoutMs: 1800000 },
 );`,
         },
     ],
