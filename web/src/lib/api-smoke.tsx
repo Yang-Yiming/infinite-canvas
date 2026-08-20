@@ -76,11 +76,16 @@ function showIntercepted(method: string, url: string, headers: string, body: str
     });
 }
 
+function shouldBypass(method: string, url: string) {
+    return method === "GET" && url.startsWith("https://raw.githubusercontent.com/yukkcat");
+}
+
 if (enabled) {
     console.warn("[Smoke] 请求拦截已开启：所有 axios/fetch 请求只会弹窗展示，不会真正发送。");
     axios.interceptors.request.use((config: InternalAxiosRequestConfig) => {
         const method = (config.method || "GET").toUpperCase();
         const url = config.baseURL ? `${String(config.baseURL).replace(/\/+$/, "")}${config.url || ""}` : config.url || "";
+        if (shouldBypass(method, url)) return config;
         showIntercepted(method, url, formatHeaders(config.headers), formatBody(config.data));
         return Promise.reject(new Error(`[Smoke] 已拦截未发送：${method} ${url}（详情见弹窗）`));
     });
@@ -90,6 +95,7 @@ if (enabled) {
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (/^(blob|data|asset):/i.test(url)) return originalFetch(input, init);
         const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
+        if (shouldBypass(method, url)) return originalFetch(input, init);
         showIntercepted(method, url, formatHeaders(init?.headers), formatBody(init?.body));
         throw new Error(`[Smoke] 已拦截未发送：${method} ${url}（详情见弹窗）`);
     }) as typeof fetch;
