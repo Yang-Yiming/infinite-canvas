@@ -53,14 +53,14 @@ function formatHeaders(headers: unknown): string {
     return String(plain);
 }
 
-function showIntercepted(method: string, url: string, headers: string, body: string) {
+function showIntercepted(method: string, url: string, headers: string, body: string, mockData: unknown) {
     Modal.info({
         title: `Smoke 拦截：${method} ${url}`,
         width: 680,
         okText: "知道了",
         content: (
             <div style={{ fontSize: 12 }}>
-                <div style={{ marginBottom: 8, opacity: 0.6 }}>该请求已被拦截，不会真正发送。</div>
+                <div style={{ marginBottom: 8, opacity: 0.6 }}>该请求已拦截，以 mock 响应返回，不会真正发送。</div>
                 {headers && (
                     <div style={{ marginBottom: 8 }}>
                         <div style={{ fontWeight: 600 }}>Headers</div>
@@ -71,6 +71,8 @@ function showIntercepted(method: string, url: string, headers: string, body: str
                 {body && (
                     <pre style={{ maxHeight: 420, overflow: "auto", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6 }}>{body}</pre>
                 )}
+                <div style={{ fontWeight: 600 }}>Mock 响应</div>
+                <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6 }}>{typeof mockData === "string" ? mockData : JSON.stringify(mockData, null, 2)}</pre>
             </div>
         ),
     });
@@ -80,14 +82,36 @@ function shouldBypass(method: string, url: string) {
     return method === "GET" && url.startsWith("https://raw.githubusercontent.com/yukkcat");
 }
 
+function mockResponseData(method: string, url: string): unknown {
+    const path = url.replace(/^https?:\/\/[^/]+/i, "");
+    if (method === "POST") {
+        if (path.endsWith("/videos")) return { id: "smoke-video-1" };
+        if (path.includes("/contents/generations/tasks")) return { id: "smoke-task-1" };
+        if (path.includes("/v2/video_generation")) return { task_id: "smoke-task-1" };
+        return {};
+    }
+    if (path.includes("/v2/query/video_generation/")) return { task: { id: "smoke-task-1", status: "succeeded", content: { url: "https://example.com/smoke-video.mp4" } } };
+    if (path.includes("/contents/generations/tasks/")) return { status: "succeeded", url: "https://example.com/smoke-video.mp4" };
+    if (/\/videos\/[^/]+$/.test(path)) return { status: "succeeded", url: "https://example.com/smoke-video.mp4" };
+    return {};
+}
+
 if (enabled) {
-    console.warn("[Smoke] 请求拦截已开启：所有 axios/fetch 请求只会弹窗展示，不会真正发送。");
+    console.warn("[Smoke] 请求拦截已开启：所有 axios/fetch 请求只会弹窗展示，并以 mock 响应返回，不会真正发送。");
     axios.interceptors.request.use((config: InternalAxiosRequestConfig) => {
         const method = (config.method || "GET").toUpperCase();
         const url = config.baseURL ? `${String(config.baseURL).replace(/\/+$/, "")}${config.url || ""}` : config.url || "";
         if (shouldBypass(method, url)) return config;
-        showIntercepted(method, url, formatHeaders(config.headers), formatBody(config.data));
-        return Promise.reject(new Error(`[Smoke] 已拦截未发送：${method} ${url}（详情见弹窗）`));
+        const mockData = mockResponseData(method, url);
+        showIntercepted(method, url, formatHeaders(config.headers), formatBody(config.data), mockData);
+        config.adapter = async () => ({
+            data: config.responseType === "blob" ? new Blob([JSON.stringify(mockData)], { type: "application/json" }) : mockData,
+            status: 200,
+            statusText: "OK",
+            headers: {},
+            config,
+        });
+        return config;
     });
 
     const originalFetch = globalThis.fetch.bind(globalThis);
@@ -96,7 +120,8 @@ if (enabled) {
         if (/^(blob|data|asset):/i.test(url)) return originalFetch(input, init);
         const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
         if (shouldBypass(method, url)) return originalFetch(input, init);
-        showIntercepted(method, url, formatHeaders(init?.headers), formatBody(init?.body));
-        throw new Error(`[Smoke] 已拦截未发送：${method} ${url}（详情见弹窗）`);
+        const mockData = mockResponseData(method, url);
+        showIntercepted(method, url, formatHeaders(init?.headers), formatBody(init?.body), mockData);
+        return new Response(JSON.stringify(mockData), { status: 200, headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
 }
