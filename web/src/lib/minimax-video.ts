@@ -1,9 +1,9 @@
 import i18n from "@/i18n";
-import { seedanceReferenceLabel } from "@/lib/seedance-video";
 import { resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceVideo } from "@/types/media";
+import { buildMinimaxVideoPayload, MINIMAX_REFERENCE_LIMITS, normalizeMinimaxDuration, normalizeMinimaxRatio, normalizeMinimaxResolution } from "@/lib/minimax-video-request";
 
-export { buildMinimaxVideoPayload, MINIMAX_REFERENCE_LIMITS, normalizeMinimaxDuration, normalizeMinimaxRatio, normalizeMinimaxResolution } from "@/lib/minimax-video-request";
+export { buildMinimaxVideoPayload, MINIMAX_REFERENCE_LIMITS, normalizeMinimaxDuration, normalizeMinimaxRatio, normalizeMinimaxResolution };
 export const MINIMAX_VIDEO_MIME_TYPES = ["video/mp4", "video/quicktime"];
 
 export const minimaxResolutionOptions = [
@@ -28,11 +28,15 @@ export function isMinimaxVideoConfig(config: AiConfig | Pick<AiConfig, "model" |
     return requestConfig.apiFormat === "minimax";
 }
 
+export function minimaxReferenceLabel(kind: "image" | "video" | "audio", index: number) {
+    return i18n.t(`minimax.references.${kind}`, { index: index + 1 });
+}
+
 export function minimaxVideoReferenceError(videos: ReferenceVideo[]) {
     let totalDurationMs = 0;
     for (let index = 0; index < videos.length; index += 1) {
         const video = videos[index];
-        const label = seedanceReferenceLabel("video", index);
+        const label = minimaxReferenceLabel("video", index);
         if (!MINIMAX_VIDEO_MIME_TYPES.includes(video.type)) return i18n.t("minimax.errors.format", { label });
         if (video.bytes && video.bytes > MINIMAX_REFERENCE_LIMITS.videoMaxBytes) return i18n.t("minimax.errors.size", { label });
         if (video.durationMs) {

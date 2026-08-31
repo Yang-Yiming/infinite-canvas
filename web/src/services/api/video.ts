@@ -6,23 +6,13 @@ import { dataUrlToFile } from "@/lib/image-utils";
 import { buildMinimaxVideoPayload, isMinimaxVideoConfig, minimaxVideoReferenceError, MINIMAX_REFERENCE_LIMITS } from "@/lib/minimax-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
-import { buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null };
 type ApiVideoResponse = VideoResponse | { code?: number | string; data?: VideoResponse | null; msg?: string; message?: string; error?: { message?: string } };
-type SeedanceTask = {
-    id: string;
-    status?: "queued" | "running" | "succeeded" | "completed" | "failed" | "cancelled" | "expired";
-    error?: { code?: string; message?: string } | null;
-    content?: { video_url?: string; url?: string; last_frame_url?: string } | null;
-    url?: string;
-    result_url?: string;
-    video_url?: string;
-};
 type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: string; message?: string; error?: { message?: string } };
 type MinimaxTask = { task_id?: string; id?: string };
 type MinimaxTaskState = { task?: { id?: string; status?: "queued" | "running" | "succeeded" | "failed" | "cancelled"; error?: { code?: string; message?: string } | null; content?: { url?: string } | null } | null };
@@ -30,7 +20,7 @@ type RequestOptions = { signal?: AbortSignal };
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "seedance" | "minimax" | "plugin"; model: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "minimax" | "plugin"; model: string };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
 
 /** Results for scripted (plugin) video models, which run their own create+poll in one shot at task creation. */
@@ -55,7 +45,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
         const state = await pollVideoGenerationTask(config, task, options);
         if (state.status === "completed") return state.result;
         if (state.status === "failed") throw new Error(state.error);
-        if (attempt === 119) throw new Error(apiText("videoTimeout", { provider: task.provider === "seedance" ? "Seedance " : task.provider === "minimax" ? "MiniMax " : "" }));
+        if (attempt === 119) throw new Error(apiText("videoTimeout", { provider: task.provider === "minimax" ? "MiniMax " : "" }));
         await delay(delayMs, options?.signal);
     }
     throw new Error(apiText("videoTimeout", { provider: "" }));
@@ -67,9 +57,6 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const script = resolveModelScript(config, selectedModel);
     if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, options);
     assertVideoConfig(requestConfig, requestConfig.model);
-    if (isSeedanceVideoConfig(requestConfig)) {
-        return createSeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
-    }
     if (isMinimaxVideoConfig(requestConfig)) {
         return createMinimaxTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     }
@@ -87,7 +74,7 @@ export async function pollVideoGenerationTask(config: AiConfig, task: VideoGener
     const requestConfig = resolveModelRequestConfig(config, task.model);
     assertVideoConfig(requestConfig, requestConfig.model);
     if (task.provider === "minimax") return pollMinimaxTask(requestConfig, task, options);
-    return task.provider === "seedance" ? pollSeedanceTask(requestConfig, task, options) : pollOpenAIVideoTask(requestConfig, task, options);
+    return pollOpenAIVideoTask(requestConfig, task, options);
 }
 
 async function createPluginVideoTask(config: AiConfig, model: string, script: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
@@ -177,54 +164,14 @@ async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, 
     }
 }
 
-async function createSeedanceTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
-    if (audioReferences.length && !references.length && !videoReferences.length) {
-        throw new Error(apiText("seedanceAudioRequiresVisual"));
-    }
-    assertSeedanceVideoReferences(videoReferences);
-    assertSeedanceAudioReferences(audioReferences);
-    const content = await buildSeedanceContent(config, prompt, references, videoReferences, audioReferences);
-    if (!content.length) throw new Error(apiText("videoPromptRequired"));
-    const payload = {
-        model: modelOptionName(model),
-        content,
-        ratio: normalizeSeedanceRatio(config.size),
-        resolution: normalizeSeedanceResolution(config.vquality),
-        duration: normalizeSeedanceDuration(config.videoSeconds),
-        generate_audio: boolConfig(config.videoGenerateAudio, true),
-        watermark: boolConfig(config.videoWatermark, false),
-    };
-
-    try {
-        const created = unwrapSeedanceTask((await axios.post<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
-        if (!created.id) throw new Error(apiText("seedanceNoTaskId"));
-        return { id: created.id, provider: "seedance", model };
-    } catch (error) {
-        throw new Error(readAxiosError(error, apiText("seedanceTaskCreateFailed")));
-    }
-}
-
-async function pollSeedanceTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
-    try {
-        const state = unwrapSeedanceTask((await axios.get<ApiEnvelope<SeedanceTask>>(seedanceApiUrl(config, task.id), { headers: aiHeaders(config), signal: options?.signal })).data);
-        const url = videoResultUrl(state);
-        if (url) return { status: "completed", result: await videoResultFromUrl(url, options) };
-        if (state.status === "succeeded" || state.status === "completed") return { status: "failed", error: apiText("seedanceNoVideoUrl") };
-        if (state.status === "failed" || state.status === "cancelled" || state.status === "expired") return { status: "failed", error: readApiErrorMessage(state.error?.message) || apiText(state.status === "expired" ? "seedanceVideoTimeout" : "seedanceVideoFailed") };
-        return { status: "pending" };
-    } catch (error) {
-        throw new Error(readAxiosError(error, apiText("seedanceTaskQueryFailed")));
-    }
-}
-
 async function createMinimaxTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
     if (audioReferences.length && !references.length && !videoReferences.length) {
         throw new Error(apiText("minimaxAudioRequiresVisual"));
     }
     assertMinimaxVideoReferences(videoReferences);
-    const imageUrls = await Promise.all(references.slice(0, MINIMAX_REFERENCE_LIMITS.images).map((image) => resolveSeedanceImageUrl(config, image)));
-    const videoUrls = await Promise.all(videoReferences.slice(0, MINIMAX_REFERENCE_LIMITS.videos).map((video) => resolveSeedanceVideoUrl(video)));
-    const audioUrls = await Promise.all(audioReferences.slice(0, MINIMAX_REFERENCE_LIMITS.audios).map((audio) => resolveSeedanceAudioUrl(audio)));
+    const imageUrls = await Promise.all(references.slice(0, MINIMAX_REFERENCE_LIMITS.images).map((image) => resolveMinimaxImageUrl(config, image)));
+    const videoUrls = await Promise.all(videoReferences.slice(0, MINIMAX_REFERENCE_LIMITS.videos).map((video) => resolveMinimaxVideoUrl(video)));
+    const audioUrls = await Promise.all(audioReferences.slice(0, MINIMAX_REFERENCE_LIMITS.audios).map((audio) => resolveMinimaxAudioUrl(audio)));
     if (!prompt.trim() && !imageUrls.length && !videoUrls.length && !audioUrls.length) throw new Error(apiText("videoPromptRequired"));
     const payload = buildMinimaxVideoPayload({ model: modelOptionName(model), prompt, imageUrls, videoUrls, audioUrls, ratio: config.size, resolution: config.vquality, duration: config.videoSeconds });
 
@@ -267,49 +214,7 @@ function minimaxApiUrl(config: AiConfig, path: string) {
     return `${config.baseUrl.trim().replace(/\/+$/, "")}${path}`;
 }
 
-function assertSeedanceVideoReferences(videoReferences: ReferenceVideo[]) {
-    const error = seedanceVideoReferenceError(videoReferences);
-    if (error) throw new Error(error);
-    let total = 0;
-    for (const video of videoReferences) {
-        if (!video.durationMs) continue;
-        if (video.durationMs < 2000 || video.durationMs > 15000) throw new Error(apiText("seedanceVideoDuration"));
-        total += video.durationMs;
-    }
-    if (total > 15000) throw new Error(apiText("seedanceVideoTotalDuration"));
-}
-
-function assertSeedanceAudioReferences(audioReferences: ReferenceAudio[]) {
-    let total = 0;
-    for (const audio of audioReferences) {
-        if (!audio.durationMs) continue;
-        if (audio.durationMs < 2000 || audio.durationMs > 15000) throw new Error(apiText("seedanceAudioDuration"));
-        total += audio.durationMs;
-    }
-    if (total > 15000) throw new Error(apiText("seedanceAudioTotalDuration"));
-}
-
-function seedanceApiUrl(config: AiConfig, taskId?: string) {
-    return buildApiUrl(config.baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
-}
-
-async function buildSeedanceContent(config: AiConfig, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[]) {
-    const content: Array<Record<string, unknown>> = [];
-    const text = buildSeedancePromptText(prompt, references, videoReferences, audioReferences);
-    if (text) content.push({ type: "text", text });
-    for (const image of references.slice(0, SEEDANCE_REFERENCE_LIMITS.images)) {
-        content.push({ type: "image_url", image_url: { url: await resolveSeedanceImageUrl(config, image) }, role: "reference_image" });
-    }
-    for (const video of videoReferences.slice(0, SEEDANCE_REFERENCE_LIMITS.videos)) {
-        content.push({ type: "video_url", video_url: { url: await resolveSeedanceVideoUrl(video) }, role: "reference_video" });
-    }
-    for (const audio of audioReferences.slice(0, SEEDANCE_REFERENCE_LIMITS.audios)) {
-        content.push({ type: "audio_url", audio_url: { url: await resolveSeedanceAudioUrl(audio) }, role: "reference_audio" });
-    }
-    return content;
-}
-
-async function resolveSeedanceImageUrl(config: AiConfig, image: ReferenceImage) {
+async function resolveMinimaxImageUrl(config: AiConfig, image: ReferenceImage) {
     const directUrl = image.url || image.dataUrl;
     if (isPublicMediaUrl(directUrl) || directUrl.startsWith("asset://")) return directUrl;
     const dataUrl = await imageToDataUrl(image);
@@ -317,7 +222,7 @@ async function resolveSeedanceImageUrl(config: AiConfig, image: ReferenceImage) 
     return dataUrl;
 }
 
-async function resolveSeedanceVideoUrl(video: ReferenceVideo) {
+async function resolveMinimaxVideoUrl(video: ReferenceVideo) {
     if (isPublicMediaUrl(video.url) || video.url.startsWith("asset://")) return video.url;
     let blob: Blob | null = null;
     if (video.storageKey) blob = await getMediaBlob(video.storageKey);
@@ -326,7 +231,7 @@ async function resolveSeedanceVideoUrl(video: ReferenceVideo) {
     return blobToDataUrl(blob);
 }
 
-async function resolveSeedanceAudioUrl(audio: ReferenceAudio) {
+async function resolveMinimaxAudioUrl(audio: ReferenceAudio) {
     if (isPublicMediaUrl(audio.url) || audio.url.startsWith("asset://")) return audio.url;
     let blob: Blob | null = null;
     if (audio.storageKey) blob = await getMediaBlob(audio.storageKey);
@@ -376,10 +281,6 @@ function unwrapVideoResponse(payload: ApiVideoResponse) {
     return unwrapEnvelope(payload, apiText("noVideoTask"));
 }
 
-function unwrapSeedanceTask(payload: ApiEnvelope<SeedanceTask>) {
-    return unwrapEnvelope(payload, apiText("seedanceNoTask"));
-}
-
 function unwrapMinimaxResponse<T>(payload: ApiEnvelope<T>) {
     return unwrapEnvelope(payload, apiText("minimaxNoTask"));
 }
@@ -394,7 +295,7 @@ function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {
     return payload as T;
 }
 
-function videoResultUrl(payload: VideoResponse | SeedanceTask) {
+function videoResultUrl(payload: VideoResponse) {
     return [payload.video_url, payload.result_url, payload.url, payload.content?.video_url, payload.content?.url].find((url) => typeof url === "string" && (isPublicMediaUrl(url) || /\.mp4(\?|#|$)/i.test(url)));
 }
 

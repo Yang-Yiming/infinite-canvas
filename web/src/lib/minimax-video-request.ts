@@ -12,7 +12,7 @@ export function normalizeMinimaxResolution(value: string) {
     return "768P";
 }
 
-export function normalizeMinimaxDuration(value: string | number) {
+export function normalizeMinimaxDuration(value: string | number | undefined) {
     const seconds = Math.floor(Number(value) || 5);
     return Math.max(4, Math.min(15, seconds));
 }

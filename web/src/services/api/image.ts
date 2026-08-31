@@ -827,29 +827,6 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         }
     }
 
-    if (requestConfig.apiFormat === "ark") {
-        if (mask) throw new Error(apiText("maskModelUnsupported"));
-        const quality = normalizeQuality(config.quality);
-        const requestSize = resolveRequestSize(quality, config.size);
-        const background = normalizeBackground(config.background);
-        const refs = await Promise.all(references.map((image) => imageToDataUrl(image)));
-        try {
-            return await requestImages(requestConfig, "/images/generations", true, (format) => ({
-                model: requestConfig.model,
-                prompt: withSystemPrompt(requestConfig, requestPrompt),
-                n,
-                response_format: format,
-                output_format: IMAGE_OUTPUT_FORMAT,
-                image: refs,
-                ...(quality ? { quality } : {}),
-                ...(requestSize ? { size: requestSize } : {}),
-                ...(background ? { background } : {}),
-            }), options);
-        } catch (error) {
-            throw new Error(readAxiosError(error, apiText("requestFailed")));
-        }
-    }
-
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);

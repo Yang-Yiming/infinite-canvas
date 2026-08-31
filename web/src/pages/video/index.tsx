@@ -12,14 +12,13 @@ import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoResolutionLabel, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
-import { isMinimaxVideoConfig, minimaxVideoReferenceError, minimaxVideoReferenceHint, MINIMAX_REFERENCE_LIMITS, normalizeMinimaxRatio } from "@/lib/minimax-video";
-import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS, SEEDANCE_VIDEO_MIME_TYPES } from "@/lib/seedance-video";
+import { isMinimaxVideoConfig, MINIMAX_VIDEO_MIME_TYPES, minimaxReferenceLabel, minimaxVideoReferenceError, minimaxVideoReferenceHint, MINIMAX_REFERENCE_LIMITS, normalizeMinimaxRatio } from "@/lib/minimax-video";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
-import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -122,14 +121,14 @@ export default function VideoPage() {
 
     const addReferences = async (files?: FileList | null) => {
         const selectedFiles = Array.from(files || []);
-        const limits = isMinimaxVideoConfig({ ...effectiveConfig, model }) ? MINIMAX_REFERENCE_LIMITS : SEEDANCE_REFERENCE_LIMITS;
-        const unsupported = selectedFiles.filter((file) => !file.type.startsWith("image/") && !SEEDANCE_VIDEO_MIME_TYPES.includes(file.type) && !isSupportedAudioFile(file));
+        const limits = MINIMAX_REFERENCE_LIMITS;
+        const unsupported = selectedFiles.filter((file) => !file.type.startsWith("image/") && !MINIMAX_VIDEO_MIME_TYPES.includes(file.type) && !isSupportedAudioFile(file));
         if (unsupported.length) message.warning(t("videoWorkbench.unsupportedFiles"));
         const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= limits.imageMaxBytes).slice(0, limits.images - references.length);
-        const videoFiles = selectedFiles.filter((file) => SEEDANCE_VIDEO_MIME_TYPES.includes(file.type) && file.size <= limits.videoMaxBytes).slice(0, limits.videos - videoReferences.length);
+        const videoFiles = selectedFiles.filter((file) => MINIMAX_VIDEO_MIME_TYPES.includes(file.type) && file.size <= limits.videoMaxBytes).slice(0, limits.videos - videoReferences.length);
         const audioFiles = selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= limits.audioMaxBytes).slice(0, limits.audios - audioReferences.length);
         if (selectedFiles.some((file) => file.type.startsWith("image/") && file.size > limits.imageMaxBytes)) message.warning(t("videoWorkbench.imageTooLarge"));
-        if (selectedFiles.some((file) => SEEDANCE_VIDEO_MIME_TYPES.includes(file.type) && file.size > limits.videoMaxBytes)) message.warning(t("videoWorkbench.videoTooLarge"));
+        if (selectedFiles.some((file) => MINIMAX_VIDEO_MIME_TYPES.includes(file.type) && file.size > limits.videoMaxBytes)) message.warning(t("videoWorkbench.videoTooLarge"));
         if (selectedFiles.some((file) => isSupportedAudioFile(file) && file.size > limits.audioMaxBytes)) message.warning(t("videoWorkbench.audioTooLarge"));
         const nextReferences = await Promise.all(
             imageFiles.map(async (file) => {
@@ -186,12 +185,12 @@ export default function VideoPage() {
                 return;
             }
             const nextReferences = await Promise.all(
-                blobs.slice(0, SEEDANCE_REFERENCE_LIMITS.images - references.length).map(async (blob, index) => {
+                blobs.slice(0, MINIMAX_REFERENCE_LIMITS.images - references.length).map(async (blob, index) => {
                     const image = await uploadImage(blob);
                     return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
                 }),
             );
-            setReferences((value) => [...value, ...nextReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.images));
+            setReferences((value) => [...value, ...nextReferences].slice(0, MINIMAX_REFERENCE_LIMITS.images));
             message.success(t("videoWorkbench.clipboardAdded", { count: nextReferences.length }));
         } catch {
             message.error(t("videoWorkbench.clipboardEmpty"));
@@ -261,10 +260,12 @@ export default function VideoPage() {
             return null;
         }
         const minimax = isMinimaxVideoConfig({ ...effectiveConfig, model });
-        const videoReferenceError = minimax ? minimaxVideoReferenceError(videoReferences) : seedanceVideoReferenceError(videoReferences);
-        if (videoReferenceError) {
-            message.error(t("videoWorkbench.referenceError", { error: videoReferenceError, hint: minimax ? minimaxVideoReferenceHint() : seedanceVideoReferenceHint() }));
-            return null;
+        if (minimax) {
+            const videoReferenceError = minimaxVideoReferenceError(videoReferences);
+            if (videoReferenceError) {
+                message.error(t("videoWorkbench.referenceError", { error: videoReferenceError, hint: minimaxVideoReferenceHint() }));
+                return null;
+            }
         }
         return { text, config: buildVideoConfig(effectiveConfig, model), references: [...references], videoReferences: [...videoReferences], audioReferences: [...audioReferences] };
     };
@@ -295,9 +296,9 @@ export default function VideoPage() {
             setPrompt(payload.content);
         } else if (payload.kind === "image") {
             const stored = await uploadImage(payload.dataUrl);
-            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, SEEDANCE_REFERENCE_LIMITS.images));
+            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, MINIMAX_REFERENCE_LIMITS.images));
         } else if (payload.kind === "video") {
-            setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }].slice(0, SEEDANCE_REFERENCE_LIMITS.videos));
+            setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }].slice(0, MINIMAX_REFERENCE_LIMITS.videos));
         }
         setAssetPickerOpen(false);
     };
@@ -376,7 +377,7 @@ export default function VideoPage() {
                 }
                 if (state.status === "failed") throw new Error(state.error);
                 if (attempt === 119) throw new Error(t("videoWorkbench.timeout"));
-                await delay(log.task.provider === "seedance" || log.task.provider === "minimax" ? 5000 : 2500);
+                await delay(log.task.provider === "minimax" ? 5000 : 2500);
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : t("workbench.generationFailed");
@@ -471,7 +472,7 @@ export default function VideoPage() {
                                     {references.map((item, index) => (
                                         <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border border-stone-200 dark:border-stone-800">
                                             <img src={item.dataUrl} alt={item.name} className="size-full object-cover" />
-                                            <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{seedanceReferenceLabel("image", index)}</span>
+                                            <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{minimaxReferenceLabel("image", index)}</span>
                                             <ReferenceOrderButtons index={index} total={references.length} onMove={(offset) => setReferences((value) => moveListItem(value, index, offset))} />
                                             <button type="button" className="absolute right-1 top-1 hidden size-6 items-center justify-center rounded bg-black/60 text-white group-hover:flex" onClick={() => setReferences((value) => value.filter((ref) => ref.id !== item.id))} aria-label={t("videoWorkbench.removeImage")}>
                                                 <Trash2 className="size-3.5" />
@@ -502,7 +503,7 @@ export default function VideoPage() {
                                     {videoReferences.map((item, index) => (
                                         <div key={item.id} className="group relative h-20 w-32 shrink-0 overflow-hidden rounded-md border border-stone-200 bg-black dark:border-stone-800">
                                             <video src={item.url} className="size-full object-cover" muted preload="metadata" />
-                                            <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{seedanceReferenceLabel("video", index)}</span>
+                                            <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">{minimaxReferenceLabel("video", index)}</span>
                                             <ReferenceOrderButtons index={index} total={videoReferences.length} onMove={(offset) => setVideoReferences((value) => moveListItem(value, index, offset))} />
                                             <button type="button" className="absolute right-1 top-1 hidden size-6 items-center justify-center rounded bg-black/60 text-white group-hover:flex" onClick={() => setVideoReferences((value) => value.filter((ref) => ref.id !== item.id))} aria-label={t("videoWorkbench.removeVideo")}>
                                                 <Trash2 className="size-3.5" />
@@ -534,7 +535,7 @@ export default function VideoPage() {
                                         <div key={item.id} className="group relative flex h-20 w-48 shrink-0 flex-col justify-center gap-2 rounded-md border border-stone-200 bg-stone-50 px-2 dark:border-stone-800 dark:bg-stone-900">
                                             <div className="flex min-w-0 items-center gap-2 text-xs text-stone-500 dark:text-stone-400">
                                                 <Music2 className="size-4 shrink-0" />
-                                                <span className="shrink-0 rounded bg-stone-200 px-1 text-[10px] text-stone-700 dark:bg-stone-800 dark:text-stone-200">{seedanceReferenceLabel("audio", index)}</span>
+                                                <span className="shrink-0 rounded bg-stone-200 px-1 text-[10px] text-stone-700 dark:bg-stone-800 dark:text-stone-200">{minimaxReferenceLabel("audio", index)}</span>
                                                 <span className="truncate">{item.name}</span>
                                             </div>
                                             <audio src={item.url} controls className="h-8 w-full" preload="metadata" />
@@ -917,13 +918,12 @@ function buildLog({ prompt, model, config, references, videoReferences, audioRef
 }
 
 function buildVideoConfig(config: AiConfig, model: string): AiConfig {
-    const seedance = isSeedanceVideoConfig({ ...config, model });
     const minimax = isMinimaxVideoConfig({ ...config, model });
     return {
         ...config,
         model,
         videoModel: model,
-        size: seedance ? normalizeSeedanceRatio(config.size) : minimax ? normalizeMinimaxRatio(config.size) : normalizeVideoSize(config.size),
+        size: minimax ? normalizeMinimaxRatio(config.size) : normalizeVideoSize(config.size),
         videoSeconds: normalizeVideoSeconds(config.videoSeconds),
         vquality: normalizeResolution(config.vquality),
         videoGenerateAudio: String(boolConfig(config.videoGenerateAudio, true)),
