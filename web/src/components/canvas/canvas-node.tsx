@@ -15,6 +15,16 @@ import { useTranslation } from "react-i18next";
 
 type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 const selectionBlue = "#2f80ff";
+// 节点拖拽缩放的硬性边界：极端尺寸（含等比缩放算出的爆炸值/Infinity）会导致渲染层无限更新报错
+const NODE_MIN_WIDTH = 220;
+const NODE_MIN_HEIGHT = 160;
+const NODE_MAX_WIDTH = 4096;
+const NODE_MAX_HEIGHT = 4096;
+
+function clampNodeSize(value: number, min: number, max: number, fallback: number) {
+    if (!Number.isFinite(value)) return fallback;
+    return Math.min(max, Math.max(min, value));
+}
 
 type CanvasNodeProps = {
     data: CanvasNodeData;
@@ -223,32 +233,25 @@ export const CanvasNode = React.memo(function CanvasNode({
 
             const dx = (event.clientX - resizeRef.current.startX) / scale;
             const dy = (event.clientY - resizeRef.current.startY) / scale;
-            const minWidth = 220;
-            const minHeight = 160;
             const startRight = resizeRef.current.startLeft + resizeRef.current.startWidth;
             const startBottom = resizeRef.current.startTop + resizeRef.current.startHeight;
             const fromLeft = resizeRef.current.corner.includes("left");
             const fromTop = resizeRef.current.corner.includes("top");
-            const rawWidth = Math.max(minWidth, resizeRef.current.startWidth + (fromLeft ? -dx : dx));
-            const rawHeight = Math.max(minHeight, resizeRef.current.startHeight + (fromTop ? -dy : dy));
-            let width = rawWidth;
-            let height = rawHeight;
+            let width = resizeRef.current.startWidth + (fromLeft ? -dx : dx);
+            let height = resizeRef.current.startHeight + (fromTop ? -dy : dy);
             if (resizeRef.current.keepRatio) {
                 const ratio = resizeRef.current.ratio;
-                if (Math.abs(dx) >= Math.abs(dy)) {
-                    height = width / ratio;
-                } else {
-                    width = height * ratio;
-                }
-                if (height < minHeight) {
-                    height = minHeight;
-                    width = height * ratio;
-                }
-                if (width < minWidth) {
-                    width = minWidth;
-                    height = width / ratio;
+                if (Number.isFinite(ratio) && ratio > 0) {
+                    if (Math.abs(dx) >= Math.abs(dy)) {
+                        height = width / ratio;
+                    } else {
+                        width = height * ratio;
+                    }
                 }
             }
+            // 死死限制在边界内；等比缩放比例过大会在边界处打破比例，避免算出爆炸尺寸
+            width = clampNodeSize(width, NODE_MIN_WIDTH, NODE_MAX_WIDTH, resizeRef.current.startWidth);
+            height = clampNodeSize(height, NODE_MIN_HEIGHT, NODE_MAX_HEIGHT, resizeRef.current.startHeight);
 
             onResize(data.id, width, height, {
                 x: fromLeft ? startRight - width : resizeRef.current.startLeft,
