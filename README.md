@@ -10,6 +10,7 @@ For what the base project actually does, see the [upstream README](https://githu
 
 | Commit | Change |
 | --- | --- |
+| [`facb8e0`](https://github.com/Yang-Yiming/infinite-canvas/commit/facb8e0) | Hard-clamp canvas node resize to min/max bounds so extreme drags no longer crash with "Maximum update depth exceeded" |
 | [`d1a392b`](https://github.com/Yang-Yiming/infinite-canvas/commit/d1a392b) | Remove resurrected Seedance / Volcengine Ark references after rebase |
 | [`de5e51c`](https://github.com/Yang-Yiming/infinite-canvas/commit/de5e51c) | Fall back to `response_format: "url"` and download image links for relays that only support the `url` response format |
 | [`f2e40c1`](https://github.com/Yang-Yiming/infinite-canvas/commit/f2e40c1) | Extend video generation timeout to 30 minutes |
