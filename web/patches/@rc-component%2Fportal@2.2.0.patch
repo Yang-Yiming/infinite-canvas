@@ -1,0 +1,25 @@
+diff --git a/es/Portal.js b/es/Portal.js
+index 734b24b3b555ebb99dc7c783d6918b4dc5f4228c..94abc9940d84b3c9dbf06325d463b06486ac63c2 100644
+--- a/es/Portal.js
++++ b/es/Portal.js
+@@ -51,13 +51,15 @@ const Portal = /*#__PURE__*/React.forwardRef((props, ref) => {
+   // ======================== Container ========================
+   const [innerContainer, setInnerContainer] = React.useState(() => getPortalContainer(getContainer));
+   React.useEffect(() => {
+-    const customizeContainer = getPortalContainer(getContainer);
++    const customizeContainer = getPortalContainer(getContainer) ?? null;
+ 
+     // Tell component that we check this in effect which is safe to be `null`
+-    setInnerContainer(() =>
+-    // React do the state update even the value is the same,
+-    // Use function call to force React to compare update
+-    customizeContainer ?? null);
++    // Skip the update entirely when nothing changed: a functional setState can never
++    // eager-bail out, so under high-frequency re-renders (e.g. streaming) it schedules
++    // a render per commit and cascades into React's nested-update limit.
++    if (innerContainer !== customizeContainer) {
++      setInnerContainer(customizeContainer);
++    }
+   });
+   const [defaultContainer, queueCreate] = useDom(mergedRender && !innerContainer, debug);
+   const mergedContainer = innerContainer ?? defaultContainer;

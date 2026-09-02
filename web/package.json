@@ -55,5 +55,8 @@
         "prettier": "^3.8.3",
         "typescript": "^5",
         "vite": "^7.3.0"
+    },
+    "patchedDependencies": {
+        "@rc-component/portal@2.2.0": "patches/@rc-component%2Fportal@2.2.0.patch"
     }
 }
