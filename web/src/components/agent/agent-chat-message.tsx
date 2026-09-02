@@ -12,7 +12,17 @@ import { resolveAgentMessageAssetUrl, revealAgentLocalFile } from "@/services/ap
 import { AgentCanvasReferencePreview, canvasReferenceIcon, canvasReferenceKindLabel } from "./agent-canvas-reference-preview";
 import { agentInlineTokenClass, agentInlineTokenIconClass, agentInlineTokenMediaClass, agentReferenceMarker, parseAgentInlineTokens } from "./agent-chat-inline-tokens";
 
-const streamdownProps = () => ({
+// Streamdown 是 memo 组件且内部依赖 props 引用做比较：流式期间每个 delta 都会重渲染消息，
+// 按语言缓存一份稳定 props 引用可让 memo 正常跳过无变化的重渲染。
+// 流式长回复的 "Maximum update depth exceeded" 崩溃由 streamdown 2.5.0 的已调度更新问题引起，
+// 已通过升级 streamdown >= 2.6.0 修复（见 CHANGELOG）。
+const streamdownPropsCache = new Map<string, ReturnType<typeof createStreamdownProps>>();
+const streamdownProps = () => {
+    const language = i18n.language || "en";
+    if (!streamdownPropsCache.has(language)) streamdownPropsCache.set(language, createStreamdownProps());
+    return streamdownPropsCache.get(language)!;
+};
+const createStreamdownProps = () => ({
     className: "agent-streamdown",
     controls: { code: { copy: true, download: false }, table: { copy: true, download: false, fullscreen: false } },
     linkSafety: { enabled: true, renderModal: (props: LinkSafetyModalProps) => <AgentLinkModal {...props} /> },

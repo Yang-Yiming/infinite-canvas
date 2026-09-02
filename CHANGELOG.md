@@ -2,6 +2,7 @@
 
 ## Unreleased
 
++ [修复] Agent 流式长回复（尤其超过 30 秒、含代码块）偶发 Maximum update depth exceeded 崩溃：升级 streamdown 2.5.0 → 2.6.0，其 2.5.0 版本在动画开启时会把流式块提升调度到 React 计数更新通道，快速流式下嵌套更新超过上限即崩；2.6.0 重写了流式动画与块调度。Agent 消息的 Streamdown props 同时改为按语言缓存的稳定引用，保证 memo 正常生效。
 + [新增] 视频创作台与画布视频节点支持 MiniMax H3 视频生成渠道（文生视频 / 图生视频 / 多模态参考生视频，768P/2K）。
 + [调整] MiniMax 视频生成图片一律按参考图（reference_image）提交，不再使用首帧/尾帧模式。
 + [调整] MiniMax 视频生成默认分辨率改为 768P，仅显式选择 2K（或全局质量设为 high）时使用 2K。
