@@ -302,8 +302,8 @@ function InfiniteCanvasPage() {
     }, []);
 
     const completeVideoNodeTask = useCallback(
-        async (nodeId: string, config: Parameters<typeof buildGenerationConfig>[0], prompt: string, images: Parameters<typeof createVideoGenerationTask>[2], signal: AbortSignal, extra: CanvasNodeData["metadata"] = {}) => {
-            const task = await createVideoGenerationTask(config, prompt, images, { signal });
+        async (nodeId: string, config: Parameters<typeof buildGenerationConfig>[0], prompt: string, images: Parameters<typeof createVideoGenerationTask>[2], videos: Parameters<typeof createVideoGenerationTask>[3], audios: Parameters<typeof createVideoGenerationTask>[4], signal: AbortSignal, extra: CanvasNodeData["metadata"] = {}) => {
+            const task = await createVideoGenerationTask(config, prompt, images, videos, audios, { signal });
             if (task.provider === "openai") {
                 setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, videoTaskId: task.id, model: config.model } } : item)));
             }
@@ -2468,7 +2468,7 @@ function InfiniteCanvasPage() {
                     if (!isEmptyVideoNode) setConnections((prev) => [...prev, { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId }]);
                     const controller = startGenerationRequest(videoId, nodeId, nodeId, runController);
                     try {
-                        await completeVideoNodeTask(videoId, generationConfig, effectivePrompt, generationContext.referenceImages, controller.signal, {
+                        await completeVideoNodeTask(videoId, generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceVideos, generationContext.referenceAudios, controller.signal, {
                             size: generationConfig.size,
                             seconds: generationConfig.videoSeconds,
                             vquality: generationConfig.vquality,
@@ -2722,7 +2722,7 @@ function InfiniteCanvasPage() {
                     return;
                 }
                 if (node.type === CanvasNodeType.Video) {
-                    await completeVideoNodeTask(node.id, generationConfig, prompt, retryImages, controller.signal, {
+                    await completeVideoNodeTask(node.id, generationConfig, prompt, retryImages, [], [], controller.signal, {
                         size: generationConfig.size,
                         seconds: generationConfig.videoSeconds,
                         vquality: generationConfig.vquality,

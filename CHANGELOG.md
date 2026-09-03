@@ -2,6 +2,7 @@
 
 ## Unreleased
 
++ [修复] 画布生成配置节点走 MiniMax 视频生成报 "video references is not iterable"：`completeVideoNodeTask` 把中止信号对象误传到 `videoReferences` 参数位；同时修正画布视频生成丢失中止信号、配置节点参考视频/音频未接入生成调用的问题。
 + [修复] 画布生成文本（流式输出）时偶发 Maximum update depth exceeded 崩溃：根因是 @rc-component/portal 的容器 effect 每次渲染都以函数式 setState 刷新容器（无法急切跳过），画布页内常驻的已关闭 Modal/浮层随流式高频重渲染时嵌套更新累积超限；已通过 bun patch 修该包在值未变化时完全跳过更新，对所有 antd 浮层全局生效。
 + [修复] Agent 流式长回复（尤其超过 30 秒、含代码块）偶发 Maximum update depth exceeded 崩溃：升级 streamdown 2.5.0 → 2.6.0，其 2.5.0 版本在动画开启时会把流式块提升调度到 React 计数更新通道，快速流式下嵌套更新超过上限即崩；2.6.0 重写了流式动画与块调度。Agent 消息的 Streamdown props 同时改为按语言缓存的稳定引用，保证 memo 正常生效。
 + [新增] 视频创作台与画布视频节点支持 MiniMax H3 视频生成渠道（文生视频 / 图生视频 / 多模态参考生视频，768P/2K）。
