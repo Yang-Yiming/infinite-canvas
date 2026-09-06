@@ -1,7 +1,7 @@
 import { memo, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { App, Empty, Input, Popconfirm, Select, Spin, Tag } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, ListChecks, Music2, Plus, Search, Settings2, Square, Trash2, Type, Video } from "lucide-react";
+import { BookOpen, Check, ChevronRight, Download, Eye, FileText, Image as ImageIcon, ListChecks, Music2, Plus, Search, Settings2, Sparkles, Square, Trash2, Type, Video } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslation } from "react-i18next";
 
@@ -300,6 +300,7 @@ const ASSET_GROUPS: { kind: AssetKind; icon: typeof Square }[] = [
     { kind: "image", icon: ImageIcon },
     { kind: "video", icon: Video },
     { kind: "text", icon: FileText },
+    { kind: "skill", icon: Sparkles },
 ];
 
 function buildInsertPayload(asset: Asset): InsertAssetPayload {
@@ -452,7 +453,7 @@ function AssetCard({ asset, theme, onInsert, onRemove }: { asset: Asset; theme: 
 }
 
 function AssetCover({ asset }: { asset: Asset }) {
-    if (asset.kind === "text") return <div className="size-full overflow-hidden whitespace-pre-wrap break-words p-2.5 text-[11px] leading-snug opacity-80">{asset.data.content}</div>;
+    if (asset.kind === "text" || asset.kind === "skill") return <div className="size-full overflow-hidden whitespace-pre-wrap break-words p-2.5 text-[11px] leading-snug opacity-80">{asset.data.content}</div>;
     if (asset.kind === "video") {
         if (asset.coverUrl) return <img src={asset.coverUrl} alt="" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;
         return <video src={`${asset.data.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover transition duration-300 group-hover:scale-[1.04]" />;

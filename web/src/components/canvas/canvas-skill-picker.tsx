@@ -28,12 +28,7 @@ export function CanvasSkillPicker({ skillId, onChange, buttonClassName }: Canvas
         ...(selected ? [{ key: NONE_KEY, label: t("canvas.skillPicker.none") }] : []),
         ...skills.map((skill) => ({
             key: skill.id,
-            label: (
-                <div className="flex min-w-0 flex-col gap-0.5 py-0.5">
-                    <span className="truncate text-xs font-medium">{skill.title}</span>
-                    <span className="truncate text-[11px] opacity-60">{skill.data.content}</span>
-                </div>
-            ),
+            label: <span className="block max-w-56 truncate text-xs">{skill.title}</span>,
         })),
         ...(skills.length ? [] : [{ key: EMPTY_KEY, label: t("canvas.skillPicker.empty"), disabled: true }]),
     ];
