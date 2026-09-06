@@ -24,7 +24,9 @@ type AssetFormValues = {
 
 type ImageDraft = ImageAsset["data"] | null;
 
-const kindOptions = ["all", "text", "image", "video"] as const;
+const kindOptions = ["all", "text", "image", "video", "skill"] as const;
+
+const isTextLike = (kind: AssetKind) => kind === "text" || kind === "skill";
 
 export default function AssetsPage() {
     const { message } = App.useApp();
@@ -52,7 +54,7 @@ export default function AssetsPage() {
     const title = Form.useWatch("title", form) || "";
     const tags = Form.useWatch("tags", form) || [];
     const content = Form.useWatch("content", form) || "";
-    const validAssets = useMemo(() => assets.filter((asset) => asset.kind === "text" || asset.kind === "image" || asset.kind === "video"), [assets]);
+    const validAssets = useMemo(() => assets.filter((asset) => isTextLike(asset.kind) || asset.kind === "image" || asset.kind === "video"), [assets]);
 
     const filteredAssets = useMemo(() => {
         const query = keyword.trim().toLowerCase();
@@ -92,7 +94,7 @@ export default function AssetsPage() {
             tags: asset.tags || [],
             source: asset.source,
             note: asset.note,
-            content: asset.kind === "text" ? asset.data.content : "",
+            content: isTextLike(asset.kind) ? asset.data.content : "",
         });
         setIsAssetOpen(true);
     };
@@ -108,8 +110,8 @@ export default function AssetsPage() {
             metadata: editingAsset?.metadata || { source: "manual" },
         };
 
-        if (values.kind === "text") {
-            const asset = { ...base, kind: "text" as const, data: { content: (values.content || "").trim() } };
+        if (isTextLike(values.kind)) {
+            const asset = { ...base, kind: values.kind, data: { content: (values.content || "").trim() } };
             editingAsset ? updateAsset(editingAsset.id, asset) : addAsset(asset);
         } else {
             if (!imageDraft) {
@@ -140,7 +142,7 @@ export default function AssetsPage() {
     };
 
     const copyAssetText = async (asset: Asset) => {
-        if (asset.kind !== "text") return;
+        if (!isTextLike(asset.kind)) return;
         copyText(asset.data.content, t("assets.textCopied"));
     };
 
@@ -301,6 +303,7 @@ export default function AssetsPage() {
                                 options={[
                                     { label: t("assets.kinds.text"), value: "text" },
                                     { label: t("assets.kinds.image"), value: "image" },
+                                    { label: t("assets.kinds.skill"), value: "skill" },
                                 ]}
                                 onChange={(value) => setFormKind(value)}
                             />
@@ -327,9 +330,9 @@ export default function AssetsPage() {
                                 <Input placeholder={t("assets.fields.optional")} />
                             </Form.Item>
                         </div>
-                        {formKind === "text" ? (
-                            <Form.Item name="content" label={t("assets.fields.textContent")} rules={[{ required: true, message: t("assets.fields.textRequired") }]}>
-                                <Input.TextArea rows={8} placeholder={t("assets.fields.textPlaceholder")} />
+                        {formKind === "text" || formKind === "skill" ? (
+                            <Form.Item name="content" label={formKind === "skill" ? t("assets.fields.skillContent") : t("assets.fields.textContent")} rules={[{ required: true, message: t("assets.fields.textRequired") }]}>
+                                <Input.TextArea rows={8} placeholder={formKind === "skill" ? t("assets.fields.skillPlaceholder") : t("assets.fields.textPlaceholder")} />
                             </Form.Item>
                         ) : (
                             <Form.Item label={t("assets.fields.imageContent")} required>
@@ -424,7 +427,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                     {cover ? (
                         <img src={cover} alt={asset.title} className="aspect-[4/3] w-full object-cover" />
                     ) : (
-                        <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm leading-6 text-stone-600 dark:bg-stone-900 dark:text-stone-300">{asset.kind === "text" ? asset.data.content : t("assets.noCover")}</div>
+                        <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm leading-6 text-stone-600 dark:bg-stone-900 dark:text-stone-300">{isTextLike(asset.kind) ? asset.data.content : t("assets.noCover")}</div>
                     )}
                 </button>
             }
@@ -462,7 +465,7 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                         {t("common.edit")}
                     </Button>
                 ) : null}
-                {asset.kind === "text" ? (
+                {isTextLike(asset.kind) ? (
                     <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => void onCopy(asset)}>
                         {t("common.copy")}
                     </Button>
@@ -490,7 +493,7 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                     {cover ? (
                         <Image src={cover} alt={asset.title} className="rounded-lg" />
                     ) : (
-                        <div className="rounded-lg border border-stone-200 bg-stone-50 p-5 text-sm leading-6 text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">{asset.kind === "text" ? asset.data.content : t("assets.noCover")}</div>
+                        <div className="rounded-lg border border-stone-200 bg-stone-50 p-5 text-sm leading-6 text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300">{isTextLike(asset.kind) ? asset.data.content : t("assets.noCover")}</div>
                     )}
                     <div>
                         <Typography.Title level={4} className="!mb-2">
@@ -507,7 +510,7 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                         <Typography.Text type="secondary" className="block text-xs">
                             {t("assets.fields.textContent")}
                         </Typography.Text>
-                        {asset.kind === "text" ? (
+                        {isTextLike(asset.kind) ? (
                             <Typography.Paragraph className="mt-2 whitespace-pre-wrap">{asset.data.content}</Typography.Paragraph>
                         ) : asset.kind === "video" ? (
                             <video src={asset.data.url} controls className="mt-2 aspect-video w-full rounded-lg bg-black" />
@@ -524,7 +527,7 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                         </div>
                     ) : null}
                     <Space>
-                        {asset.kind === "text" ? (
+                        {isTextLike(asset.kind) ? (
                             <Button type="primary" icon={<Copy className="size-4" />} onClick={() => onCopy(asset)}>
                                 {t("assets.copyText")}
                             </Button>
@@ -554,10 +557,10 @@ async function readAssetMediaBlob(asset: Extract<Asset, { kind: "image" | "video
 }
 
 function assetSummary(asset: Asset) {
-    if (asset.kind === "text") return asset.data.content;
+    if (isTextLike(asset.kind)) return asset.data.content;
     return `${asset.data.width}x${asset.data.height} · ${formatBytes(asset.data.bytes)} · ${asset.data.mimeType}`;
 }
 
 function assetSearchText(asset: Asset) {
-    return [asset.title, asset.source || "", asset.note || "", (asset.tags || []).join(" "), asset.kind === "text" ? asset.data.content : asset.data.mimeType].join(" ").toLowerCase();
+    return [asset.title, asset.source || "", asset.note || "", (asset.tags || []).join(" "), isTextLike(asset.kind) ? asset.data.content : asset.data.mimeType].join(" ").toLowerCase();
 }

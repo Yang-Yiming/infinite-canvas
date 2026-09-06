@@ -55,6 +55,7 @@ import {
     buildAnglePrompt,
     buildGenerationConfig,
     findRetrySourceNode,
+    buildSkillPromptPrefix,
     generationReferenceUrls,
     getGenerationCount,
     getInputSummary,
@@ -2271,8 +2272,9 @@ function InfiniteCanvasPage() {
             const runController = startGenerationRequest(nodeId, nodeId, nodeId);
             const sourceTextContent = sourceNode?.type === CanvasNodeType.Text ? sourceNode.metadata?.content?.trim() || "" : "";
             const editingTextNode = mode === "text" && Boolean(sourceTextContent);
+            const skillPrefix = mode === "text" ? buildSkillPromptPrefix(sourceNode?.metadata?.skillId) : "";
             const generationContext = await hydrateNodeGenerationContext(
-                buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, editingTextNode ? t("canvas.projectPage.editTextPrompt", { source: sourceTextContent, prompt }) : prompt),
+                buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, `${skillPrefix}${editingTextNode ? t("canvas.projectPage.editTextPrompt", { source: sourceTextContent, prompt }) : prompt}`),
             );
             const effectivePrompt = generationContext.prompt.trim();
             if (runController.signal.aborted) {

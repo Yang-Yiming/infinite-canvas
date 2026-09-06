@@ -1,4 +1,5 @@
 import { defaultConfig, resolveModelForCapability, type AiConfig } from "@/stores/use-config-store";
+import { useAssetStore } from "@/stores/use-asset-store";
 import i18n from "@/i18n";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { resolveMediaUrl } from "@/services/file-storage";
@@ -81,6 +82,14 @@ export async function hydrateAssistantImages(sessions: CanvasAssistantSession[])
 
 export function getGenerationCount(count: string) {
     return Math.max(1, Math.min(15, Math.floor(Math.abs(Number(count)) || 1)));
+}
+
+export function buildSkillPromptPrefix(skillId?: string) {
+    if (!skillId) return "";
+    const skill = useAssetStore.getState().assets.find((asset) => asset.kind === "skill" && asset.id === skillId);
+    const content = skill?.data.content.trim();
+    if (!skill || !content) return "";
+    return `【${i18n.t("canvas.skill.prefix", { title: skill.title })}】\n${content}\n\n`;
 }
 
 export function getInputSummary(inputs: NodeGenerationInput[]) {
