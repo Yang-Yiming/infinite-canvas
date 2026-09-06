@@ -34,23 +34,27 @@ export function CanvasSkillPicker({ skillId, onChange, buttonClassName }: Canvas
     ];
 
     return (
-        <Dropdown
-            trigger={["click"]}
-            menu={{
-                items,
-                selectedKeys: skillId ? [skillId] : [],
-                onClick: ({ key }) => onChange(key === NONE_KEY ? undefined : key),
-            }}
-        >
-            <Button
-                type="text"
-                className={`${buttonClassName || ""} !bg-transparent hover:!bg-black/5 dark:hover:!bg-white/10`}
-                style={{ color: theme.node.text }}
-                icon={<Sparkles className={selected ? "size-3.5 shrink-0" : "size-3.5 shrink-0 opacity-70"} />}
-                aria-label={t("canvas.skillPicker.title")}
+        // The dropdown menu portals to body but its events bubble through this wrapper in the React tree;
+        // stop them here so the canvas does not treat menu clicks as blank-canvas clicks and close panels.
+        <span onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()}>
+            <Dropdown
+                trigger={["click"]}
+                menu={{
+                    items,
+                    selectedKeys: skillId ? [skillId] : [],
+                    onClick: ({ key }) => onChange(key === NONE_KEY ? undefined : key),
+                }}
             >
-                <span className="max-w-28 truncate text-xs">{selected ? selected.title : t("canvas.skillPicker.title")}</span>
-            </Button>
-        </Dropdown>
+                <Button
+                    type="text"
+                    className={`${buttonClassName || ""} !bg-transparent hover:!bg-black/5 dark:hover:!bg-white/10`}
+                    style={{ color: theme.node.text }}
+                    icon={<Sparkles className={selected ? "size-3.5 shrink-0" : "size-3.5 shrink-0 opacity-70"} />}
+                    aria-label={t("canvas.skillPicker.title")}
+                >
+                    <span className="max-w-28 truncate text-xs">{selected ? selected.title : t("canvas.skillPicker.title")}</span>
+                </Button>
+            </Dropdown>
+        </span>
     );
 }

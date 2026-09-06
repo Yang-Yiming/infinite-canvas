@@ -2977,6 +2977,8 @@ function InfiniteCanvasPage() {
                     value={panelNode.metadata?.composerContent ?? panelNode.metadata?.prompt ?? ""}
                     inputs={configInputsById.get(panelNode.id) || []}
                     connectedNodes={connectedNodesByNodeId.get(panelNode.id) || []}
+                    skillId={panelNode.metadata?.skillId}
+                    onSkillChange={(skillId) => handleConfigNodeChange(panelNode.id, { skillId })}
                     onChange={(composerContent) => handleConfigNodeChange(panelNode.id, { composerContent })}
                     onClose={() => setDialogNodeId(null)}
                     onDisconnectReference={disconnectNodeReference}

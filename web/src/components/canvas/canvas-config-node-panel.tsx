@@ -97,11 +97,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, onConfigC
                     <Settings2 className="size-3.5" />
                     {t("canvas.configNode.compose")}
                 </button>
-                {mode === "text" ? (
-                    <span onMouseDown={(event) => event.stopPropagation()}>
-                        <CanvasSkillPicker skillId={node.metadata?.skillId} onChange={(skillId) => onConfigChange(node.id, { skillId })} buttonClassName="!h-7 !rounded-md !px-2" />
-                    </span>
-                ) : null}
+                {mode === "text" ? <CanvasSkillPicker skillId={node.metadata?.skillId} onChange={(skillId) => onConfigChange(node.id, { skillId })} buttonClassName="!h-7 !rounded-md !px-2" /> : null}
             </div>
 
             <div className="mb-2 grid min-w-0 cursor-default grid-cols-[minmax(0,1fr)_148px] items-center gap-2" onMouseDown={(event) => event.stopPropagation()}>

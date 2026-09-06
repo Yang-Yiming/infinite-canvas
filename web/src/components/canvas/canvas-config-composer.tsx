@@ -9,6 +9,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { NodeGenerationInput } from "./canvas-node-generation";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
+import { CanvasSkillPicker } from "./canvas-skill-picker";
 import type { CanvasNodeData } from "@/types/canvas";
 
 type CanvasConfigComposerProps = {
@@ -17,6 +18,8 @@ type CanvasConfigComposerProps = {
     value: string;
     inputs: NodeGenerationInput[];
     connectedNodes?: CanvasNodeData[];
+    skillId?: string;
+    onSkillChange?: (skillId?: string) => void;
     onChange: (value: string) => void;
     onClose: () => void;
     onDisconnectReference?: (fromNodeId: string, toNodeId: string) => void;
@@ -33,7 +36,7 @@ type MentionState = {
 
 export const CONFIG_REFERENCE_PATTERN = /@\[node:([^\]]+)\]/g;
 
-export function CanvasConfigComposer({ nodeId, nodes, value, inputs, connectedNodes = [], onChange, onClose, onDisconnectReference, onStartReferenceSelection }: CanvasConfigComposerProps) {
+export function CanvasConfigComposer({ nodeId, nodes, value, inputs, connectedNodes = [], skillId, onSkillChange, onChange, onClose, onDisconnectReference, onStartReferenceSelection }: CanvasConfigComposerProps) {
     const { t } = useTranslation();
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const editorRef = useRef<HTMLDivElement>(null);
@@ -128,7 +131,10 @@ export function CanvasConfigComposer({ nodeId, nodes, value, inputs, connectedNo
                     <div className="shrink-0 text-xs font-semibold">{t("canvas.composer.title")}</div>
                     <div className="truncate text-[11px] opacity-55">{t("canvas.composer.description")}</div>
                 </div>
-                <Button size="small" type="text" className="!h-7 !w-7 !min-w-7 !p-0" icon={<X className="size-3.5" />} onClick={onClose} />
+                <div className="flex shrink-0 items-center gap-1">
+                    {onSkillChange ? <CanvasSkillPicker skillId={skillId} onChange={onSkillChange} buttonClassName="!h-7 !rounded-md !px-2" /> : null}
+                    <Button size="small" type="text" className="!h-7 !w-7 !min-w-7 !p-0" icon={<X className="size-3.5" />} onClick={onClose} />
+                </div>
             </div>
             <CanvasNodeReferenceBar nodeId={nodeId} nodes={nodes} connectedNodes={connectedNodes} onDisconnect={onDisconnectReference} onStartSelection={onStartReferenceSelection} />
             <div className="relative rounded-xl">

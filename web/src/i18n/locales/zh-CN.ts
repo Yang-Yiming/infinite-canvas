@@ -287,6 +287,7 @@ export default {
         promptPanel: { video: "描述要生成的视频内容", audio: "描述要生成的音频内容", image: "描述要生成的图片内容", text: "请输入你想要生成的文本内容", editImage: "请输入你想要把这张图修改成什么", editText: "请输入你想要将本段文本修改成什么", expandEditor: "放大编辑", editorTitle: "编辑提示词", stopGeneration: "停止生成", generate: "生成", stop: "停止" },
         skillPicker: { title: "技能", none: "不使用技能", empty: "暂无技能，可在「我的资产」中新增" },
         skill: { prefix: "技能 · {{title}}" },
+        references: { title: "参考内容", select: "从画布选择参考", disconnect: "移除参考", empty: "暂无内容", choose: "点击选为参考", selecting: "正在选择参考", selectingHint: "正在选择参考，点击此处退出" },
         composer: { title: "组装提示词", description: "@ 引用已连接资产，发送前按当前连接重新编号", placeholder: "输入提示词，按 @ 引用连接的图片或文本", imagePreview: "引用图片预览", resources: { image: "图片{{index}}", video: "视频{{index}}", audio: "音频{{index}}", text: "文本{{index}}" } },
         controls: { ratio: "比例", duplicate: "复制", delete: "删除", images: "{{count}} 张", generations: "{{count}} 次", reasoning: "推理" },
         generation: { interrupted: "页面刷新后生成已中断，请重新生成。", front: "正面视角", rotateRight: "向右旋转 {{angle}} 度", rotateLeft: "向左旋转 {{angle}} 度", level: "水平视角", topDown: "俯视 {{angle}} 度", lowAngle: "仰视 {{angle}} 度", angleLabel: "AI 多角度：{{horizontal}}，{{pitch}}，镜头距离 {{distance}}，{{lens}}镜头", anglePrompt: "基于参考图重新生成同一主体的新视角，保持主体、颜色、材质和画面风格一致，不要只做透视变形。{{angle}}。" },
