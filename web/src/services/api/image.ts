@@ -68,7 +68,7 @@ type ResponseApiPayload = {
     code?: number;
     msg?: string;
 };
-type ResponseStreamState = { buffer: string; text: string; payload?: ResponseApiPayload; error?: string };
+type ResponseStreamState = { buffer: string; raw: string; text: string; payload?: ResponseApiPayload; error?: string };
 
 type ImageApiResponse = {
     data?: Array<Record<string, unknown>>;
@@ -522,6 +522,39 @@ function consumeResponseStreamText(state: ResponseStreamState, text: string, onD
     }
 }
 
+// Some relays answer /responses with chat.completions-style SSE or a plain JSON body; recover the text
+// when no Responses-API event carried output, so a request that actually ran is not reported as empty.
+function parseChatStyleContent(raw: string) {
+    const trimmed = raw.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("{")) {
+        try {
+            const payload = JSON.parse(trimmed) as ResponseApiPayload & { choices?: Array<{ message?: { content?: string } }> };
+            return parseToolResponse(payload).content || payload.choices?.[0]?.message?.content || "";
+        } catch {
+            return "";
+        }
+    }
+    let content = "";
+    for (const block of trimmed.split(/\r?\n\r?\n/)) {
+        const data = block
+            .split(/\r?\n/)
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.slice(5).replace(/^ /, ""))
+            .join("\n")
+            .trim();
+        if (!data || data === "[DONE]") continue;
+        try {
+            const event = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }> };
+            const choice = event.choices?.[0];
+            content += choice?.delta?.content || choice?.message?.content || "";
+        } catch {
+            // Ignore non-JSON blocks in mixed streams.
+        }
+    }
+    return content;
+}
+
 async function requestStreamingResponse(config: AiConfig, body: Record<string, unknown>, onDelta?: (text: string) => void, options?: RequestOptions): Promise<ToolResponseResult> {
     const response = await fetch(aiApiUrl(config, "/responses"), {
         method: "POST",
@@ -538,19 +571,22 @@ async function requestStreamingResponse(config: AiConfig, body: Record<string, u
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    const state: ResponseStreamState = { buffer: "", text: "" };
+    const state: ResponseStreamState = { buffer: "", raw: "", text: "" };
     for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        consumeResponseStreamText(state, decoder.decode(value, { stream: true }), onDelta);
+        const decoded = decoder.decode(value, { stream: true });
+        state.raw += decoded;
+        consumeResponseStreamText(state, decoded, onDelta);
         if (state.error) throw new Error(state.error);
     }
     consumeResponseStreamText(state, decoder.decode(), onDelta, true);
     if (state.error) throw new Error(state.error);
-    if (!state.payload) return { content: state.text, toolCalls: [] };
+    const fallback = state.text ? "" : parseChatStyleContent(state.raw);
+    if (!state.payload) return { content: fallback, toolCalls: [] };
     validateResponsePayload(state.payload);
     const result = parseToolResponse(state.payload);
-    return { ...result, content: state.text || result.content };
+    return { ...result, content: state.text || result.content || fallback };
 }
 
 function toGeminiBody(config: AiConfig, messages: ResponseInputMessage[], extra?: Record<string, unknown>) {

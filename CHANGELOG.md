@@ -3,6 +3,7 @@
 ## Unreleased
 
 + [新增] 画布技能（Skill）：可在「我的资产」中新增技能类型资产保存一段长文本；文本节点与生成配置节点在文本模式下可直接选择一个技能（组装提示词浮层内也可选择），生成时自动把技能内容注入到提示词最前面，无需再将其作为参考节点连入；画布左侧资产面板同时按技能分组展示。
++ [修复] OpenAI 格式文本生成偶发显示「没有返回内容」：部分中转平台对 `/responses` 返回 chat.completions 风格 SSE 或普通 JSON，原解析器只认 Responses API 事件导致内容为空；现已在解析不到内容时按 chat 风格流/普通 JSON 兜底提取文本。
 + [修复] 技能下拉菜单点击会冒泡到画布被当成空白处点击，导致组装提示词浮层关闭、节点取消选中；同时补齐画布参考内容栏缺失的 `canvas.references` 文案。
 + [修复] 画布生成配置节点走 MiniMax 视频生成报 "video references is not iterable"：`completeVideoNodeTask` 把中止信号对象误传到 `videoReferences` 参数位；同时修正画布视频生成丢失中止信号、配置节点参考视频/音频未接入生成调用的问题。
 + [修复] 画布生成文本（流式输出）时偶发 Maximum update depth exceeded 崩溃：根因是 @rc-component/portal 的容器 effect 每次渲染都以函数式 setState 刷新容器（无法急切跳过），画布页内常驻的已关闭 Modal/浮层随流式高频重渲染时嵌套更新累积超限；已通过 bun patch 修该包在值未变化时完全跳过更新，对所有 antd 浮层全局生效。
