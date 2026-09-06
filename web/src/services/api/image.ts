@@ -500,6 +500,14 @@ function consumeResponseStreamBlock(block: string, state: ResponseStreamState, o
         state.text = event.text;
         onDelta?.(state.text);
     }
+    // Codex-style backends with safety buffering can skip output_text deltas and deliver the whole message via item.done.
+    if (type === "response.output_item.done" && !state.text && isRecord(event.item)) {
+        const item = event.item as { type?: string; content?: Array<{ type?: string; text?: string }> };
+        if (item.type === "message") {
+            state.text = (item.content || []).map((part) => (part.type === "output_text" ? part.text || "" : "")).join("");
+            onDelta?.(state.text);
+        }
+    }
     if (type === "response.completed" && isRecord(event.response)) {
         state.payload = event.response as ResponseApiPayload;
     } else if (Array.isArray(event.output)) {
@@ -587,13 +595,18 @@ async function requestStreamingResponse(config: AiConfig, body: Record<string, u
     const fallback = state.text ? "" : parseChatStyleContent(state.raw);
     if (fallback) return { content: fallback, toolCalls: [] };
     if (!state.payload) {
-        if (!state.text) console.warn("[infinite-canvas] /responses stream had no recognizable text; raw response head:\n", state.raw.slice(0, 1000));
+        if (!state.text) warnUnparsedResponse(state.raw);
         return { content: state.text, toolCalls: [] };
     }
     validateResponsePayload(state.payload);
     const result = parseToolResponse(state.payload);
-    if (!state.text && !result.content) console.warn("[infinite-canvas] /responses stream had no recognizable text; raw response head:\n", state.raw.slice(0, 1000));
+    if (!state.text && !result.content) warnUnparsedResponse(state.raw);
     return { ...result, content: state.text || result.content };
+}
+
+function warnUnparsedResponse(raw: string) {
+    const eventTypes = Array.from(new Set(Array.from(raw.matchAll(/"type":"([^"]+)"/g), (match) => match[1]))).join(", ");
+    console.warn("[infinite-canvas] /responses stream had no recognizable text; event types:", eventTypes || "(none)", "\nraw tail:\n", raw.slice(-1500));
 }
 
 function toGeminiBody(config: AiConfig, messages: ResponseInputMessage[], extra?: Record<string, unknown>) {
