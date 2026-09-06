@@ -243,9 +243,9 @@ export default {
         agentDisconnected: "Codex disconnected",
         connecting: "Connecting",
         openAgent: "Open local Codex panel",
-        nodeTypes: { image: "Image", text: "Text", config: "Generation config", video: "Video", audio: "Audio", group: "Group" },
+        nodeTypes: { image: "Image", text: "Text", config: "Generation config", video: "Video", audio: "Audio", group: "Group", reference: "Reference pack" },
         toolbar: {
-            select: "Select", pan: "Move", text: "Text", image: "Image", video: "Video", audio: "Audio", config: "Generation config", group: "Group", extensions: "Extension nodes", upload: "Upload assets", appearance: "Canvas appearance", clear: "Clear canvas",
+            select: "Select", pan: "Move", text: "Text", image: "Image", video: "Video", audio: "Audio", config: "Generation config", group: "Group", reference: "Reference pack", extensions: "Extension nodes", upload: "Upload assets", appearance: "Canvas appearance", clear: "Clear canvas",
             themeMode: "Theme", light: "Light", dark: "Dark", gridStyle: "Grid style", dots: "Dots", lines: "Lines", blank: "Blank", imageInfo: "Image info",
         },
         project: {
@@ -255,7 +255,7 @@ export default {
         },
         export: { defaultProjectName: "Infinite Canvas", defaultNodesName: "Canvas elements", item: "Element" },
         createMenu: {
-            fromNode: "Generate from this node", close: "Close", text: "Generate text", textDescription: "Scripts, ad copy, and brand content", image: "Generate image", video: "Generate video", audio: "Audio reference", config: "Configuration node", configDescription: "Model, size, count, and input order", select: "Select a node",
+            fromNode: "Generate from this node", close: "Close", text: "Generate text", textDescription: "Scripts, ad copy, and brand content", image: "Generate image", video: "Generate video", audio: "Audio reference", config: "Configuration node", configDescription: "Model, size, count, and input order", reference: "Reference pack", referenceDescription: "Bundle multiple references and pass them along connections", select: "Select a node",
         },
         node: {
             node: "Node",
@@ -265,7 +265,7 @@ export default {
             canvas: "Canvas", assets: "Assets", prompts: "Prompt Library", resize: "Resize left panel", elements: "Canvas elements", select: "Select", searchNodes: "Search nodes", focusNode: "Focus node", preview: "Large preview", noNodes: "No nodes on this canvas", clearAll: "Clear all", selected: "{{count}} selected", exporting: "Exporting selected elements…", exportName: "canvas-elements-{{count}}", exported: "Exported {{count}} elements", exportFailed: "Export failed. Try again.",
             addingAssets: "Adding assets…", addedAssets: "Added {{count}} assets", mediaOnly: "Only image and video files are supported", addFailed: "Failed to add assets. Try again.", searchAssets: "Search assets", add: "Add", noAssets: "No assets", inserted: "Insert into canvas", removeAssetTitle: "Remove this asset?", remove: "Remove", removeAsset: "Remove asset", assetRemoved: "Asset removed",
             searchPrompts: "Search prompts", noPrompts: "No prompts", promptCopied: "Prompt copied", copyFailed: "Copy failed", loadFailedRetry: "Load failed. Click to retry.", noMatchingPrompts: "No matching prompts", sourceEmpty: "No prompts from this source", viewDetails: "View details",
-            filter: { image: "Image", video: "Video", text: "Text", audio: "Audio", config: "Configuration", group: "Group" },
+            filter: { image: "Image", video: "Video", text: "Text", audio: "Audio", config: "Configuration", group: "Group", reference: "Reference pack" },
         },
         assetPicker: { title: "Select assets", insert: "Insert", search: "Search assets", empty: "No assets" },
         imageTools: { copyPrompt: "Copy prompt", copyPromptTitle: "Copy the prompt used to generate this image", reversePrompt: "Reverse prompt", reversePromptTitle: "Create text and configuration nodes to infer the prompt", replace: "Replace image", locked: "Lock ratio", free: "Free ratio", lockTitle: "Switch to proportional scaling", freeTitle: "Switch to free resizing", mask: "Local edit", maskTitle: "Paint a mask and edit the selected area", crop: "Crop", cropTitle: "Crop into a new node", split: "Split", splitTitle: "Split the image by rows and columns", upscale: "Upscale", upscaleTitle: "Increase image resolution", superResolve: "Super resolution", superResolveTitle: "AI super resolution", angle: "Multi-angle", angleTitle: "Generate another angle", view: "View image", viewTitle: "View image details", more: "More", configure: "Configure quick tools", customize: "Customize toolbar", showLabels: "Show button labels", description: "Choose the quick tools shown in the image-node toolbar.", preview: "Node preview", imageNode: "Image node", quickTools: "Quick tools" },
@@ -288,6 +288,7 @@ export default {
         skillPicker: { title: "Skill", none: "No skill", empty: "No skills yet. Create one in My Assets." },
         skill: { prefix: "Skill · {{title}}" },
         references: { title: "References", select: "Select references from canvas", disconnect: "Remove reference", empty: "No content", choose: "Click to use as reference", selecting: "Selecting references", selectingHint: "Selecting references — click here to exit" },
+        referenceNode: { hint: "Generation nodes connected to this pack receive all packed references" },
         composer: { title: "Compose prompt", description: "Use @ to reference connected assets; references are renumbered before sending", placeholder: "Enter a prompt and use @ to reference connected images or text", imagePreview: "Referenced image preview", resources: { image: "Image {{index}}", video: "Video {{index}}", audio: "Audio {{index}}", text: "Text {{index}}" } },
         controls: { ratio: "Ratio", duplicate: "Duplicate", delete: "Delete", images: "{{count}} images", generations: "{{count}} runs", reasoning: "Reasoning" },
         generation: { interrupted: "Generation was interrupted by a page refresh. Generate again.", front: "front view", rotateRight: "rotated {{angle}} degrees right", rotateLeft: "rotated {{angle}} degrees left", level: "eye-level view", topDown: "{{angle}}-degree top-down view", lowAngle: "{{angle}}-degree low-angle view", angleLabel: "AI multi-angle: {{horizontal}}, {{pitch}}, camera distance {{distance}}, {{lens}} lens", anglePrompt: "Regenerate a new view of the same subject from the reference image. Preserve the subject, colors, materials, and visual style; do not merely apply perspective distortion. {{angle}}." },

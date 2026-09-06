@@ -67,11 +67,23 @@ export function getGenerationResourceNodes(nodeId: string, nodes: CanvasNodeData
     return [];
 }
 
-function getContextInputNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    return connections
+function getContextInputNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], visited: Set<string> = new Set()) {
+    const inputs = connections
         .filter((connection) => connection.toNodeId === nodeId)
         .map((connection) => nodes.find((node) => node.id === connection.fromNodeId))
         .filter((node): node is CanvasNodeData => Boolean(node && isCanvasReferenceNode(node, nodes)));
+    return expandReferencePackNodes(inputs, nodes, connections, visited);
+}
+
+// 参考包节点透明展开：包成员 = 包的入边参考节点；嵌套参考包递归展开，visited 防止成环。
+function expandReferencePackNodes(inputNodes: CanvasNodeData[], nodes: CanvasNodeData[], connections: CanvasConnection[], visited: Set<string>) {
+    const expanded = inputNodes.flatMap((node): CanvasNodeData[] => {
+        if (node.type !== CanvasNodeType.Reference) return [node];
+        if (visited.has(node.id)) return [];
+        visited.add(node.id);
+        return getContextInputNodes(node.id, nodes, connections, visited);
+    });
+    return [...new Map(expanded.map((node) => [node.id, node])).values()];
 }
 
 function getConnectedConfigInputNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
@@ -85,7 +97,7 @@ function hasGroupResources(node: CanvasNodeData, nodes: CanvasNodeData[]) {
 }
 
 export function isCanvasReferenceNode(node: CanvasNodeData, nodes: CanvasNodeData[]) {
-    return isResourceNode(node) || hasGroupResources(node, nodes);
+    return node.type === CanvasNodeType.Reference || isResourceNode(node) || hasGroupResources(node, nodes);
 }
 
 function expandGroupResourceNodes(inputNodes: CanvasNodeData[], nodes: CanvasNodeData[]) {
