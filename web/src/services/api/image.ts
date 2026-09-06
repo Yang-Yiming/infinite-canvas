@@ -528,12 +528,14 @@ function parseChatStyleContent(raw: string) {
     const trimmed = raw.trim();
     if (!trimmed) return "";
     if (trimmed.startsWith("{")) {
+        let payload: ResponseApiPayload & { choices?: Array<{ message?: { content?: string } }> };
         try {
-            const payload = JSON.parse(trimmed) as ResponseApiPayload & { choices?: Array<{ message?: { content?: string } }> };
-            return parseToolResponse(payload).content || payload.choices?.[0]?.message?.content || "";
+            payload = JSON.parse(trimmed) as ResponseApiPayload & { choices?: Array<{ message?: { content?: string } }> };
         } catch {
             return "";
         }
+        validateResponsePayload(payload);
+        return parseToolResponse(payload).content || payload.choices?.[0]?.message?.content || "";
     }
     let content = "";
     for (const block of trimmed.split(/\r?\n\r?\n/)) {
@@ -583,10 +585,15 @@ async function requestStreamingResponse(config: AiConfig, body: Record<string, u
     consumeResponseStreamText(state, decoder.decode(), onDelta, true);
     if (state.error) throw new Error(state.error);
     const fallback = state.text ? "" : parseChatStyleContent(state.raw);
-    if (!state.payload) return { content: fallback, toolCalls: [] };
+    if (fallback) return { content: fallback, toolCalls: [] };
+    if (!state.payload) {
+        if (!state.text) console.warn("[infinite-canvas] /responses stream had no recognizable text; raw response head:\n", state.raw.slice(0, 1000));
+        return { content: state.text, toolCalls: [] };
+    }
     validateResponsePayload(state.payload);
     const result = parseToolResponse(state.payload);
-    return { ...result, content: state.text || result.content || fallback };
+    if (!state.text && !result.content) console.warn("[infinite-canvas] /responses stream had no recognizable text; raw response head:\n", state.raw.slice(0, 1000));
+    return { ...result, content: state.text || result.content };
 }
 
 function toGeminiBody(config: AiConfig, messages: ResponseInputMessage[], extra?: Record<string, unknown>) {
