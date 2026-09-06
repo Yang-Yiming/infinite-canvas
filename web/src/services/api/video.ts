@@ -11,17 +11,22 @@ import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
-type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null };
+type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null; progress?: number; progress_detail?: VideoProgressDetail | null };
 type ApiVideoResponse = VideoResponse | { code?: number | string; data?: VideoResponse | null; msg?: string; message?: string; error?: { message?: string } };
 type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: string; message?: string; error?: { message?: string } };
 type MinimaxTask = { task_id?: string; id?: string };
-type MinimaxTaskState = { task?: { id?: string; status?: "queued" | "running" | "succeeded" | "failed" | "cancelled"; error?: { code?: string; message?: string } | null; content?: { url?: string } | null } | null };
+type MinimaxTaskState = { task?: { id?: string; status?: "queued" | "running" | "succeeded" | "failed" | "cancelled"; error?: { code?: string; message?: string } | null; content?: { url?: string } | null; progress?: number; progress_detail?: VideoProgressDetail | null } | null };
 type RequestOptions = { signal?: AbortSignal };
+type WaitOptions = RequestOptions & { onProgress?: (progress?: VideoGenerationProgress) => void };
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
 export type VideoGenerationTask = { id: string; provider: "openai" | "minimax" | "plugin"; model: string };
-export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
+export type VideoGenerationTaskState = { status: "pending"; progress?: VideoGenerationProgress } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
+
+// Upstream (H3 adapter) optional progress fields; all of them may be absent on any poll response.
+export type VideoProgressDetail = { stage?: string; step?: number; steps?: number; stage_progress?: number; eta_seconds?: number; elapsed_seconds?: number; queue_position?: number; updated_at?: number };
+export type VideoGenerationProgress = { percent?: number; stage?: string; etaSeconds?: number };
 
 /** Results for scripted (plugin) video models, which run their own create+poll in one shot at task creation. */
 const pluginVideoResults = new Map<string, VideoGenerationResult>();
@@ -41,13 +46,14 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
     return waitForVideoGenerationTask(config, await createVideoGenerationTask(config, prompt, references, videoReferences, audioReferences, options), options);
 }
 
-export async function waitForVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationResult> {
+export async function waitForVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: WaitOptions): Promise<VideoGenerationResult> {
     const delayMs = 15000;
     for (let attempt = 0; attempt < 120; attempt += 1) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const state = await pollVideoGenerationTask(config, task, options);
         if (state.status === "completed") return state.result;
         if (state.status === "failed") throw videoTaskFailed(state.error);
+        if (state.progress) options?.onProgress?.(state.progress);
         if (attempt === 119) throw new Error(apiText("videoTimeout", { provider: task.provider === "minimax" ? "MiniMax " : "" }));
         await delay(delayMs, options?.signal);
     }
@@ -171,7 +177,7 @@ async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, 
             return { status: "completed", result: { blob: content.data } };
         }
         if (video.status === "failed" || video.status === "cancelled") return { status: "failed", error: readApiErrorMessage(video.error?.message) || apiText("videoGenerationFailed") };
-        return { status: "pending" };
+        return { status: "pending", progress: readVideoProgress(video.progress, video.progress_detail) };
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("videoTaskQueryFailed")));
     }
@@ -205,10 +211,19 @@ async function pollMinimaxTask(config: AiConfig, task: VideoGenerationTask, opti
         if (url) return { status: "completed", result: await videoResultFromUrl(url, options) };
         if (state.task?.status === "succeeded") return { status: "failed", error: apiText("minimaxNoVideoUrl") };
         if (state.task?.status === "failed" || state.task?.status === "cancelled") return { status: "failed", error: readApiErrorMessage(state.task?.error?.message) || apiText("minimaxVideoFailed") };
-        return { status: "pending" };
+        return { status: "pending", progress: readVideoProgress(state.task?.progress, state.task?.progress_detail) };
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("minimaxTaskQueryFailed")));
     }
+}
+
+function readVideoProgress(percent?: number, detail?: VideoProgressDetail | null): VideoGenerationProgress | undefined {
+    if (typeof percent !== "number" && !detail?.stage) return undefined;
+    return {
+        ...(typeof percent === "number" && Number.isFinite(percent) ? { percent: Math.min(100, Math.max(0, Math.round(percent))) } : {}),
+        ...(detail?.stage ? { stage: detail.stage } : {}),
+        ...(typeof detail?.eta_seconds === "number" && Number.isFinite(detail.eta_seconds) ? { etaSeconds: Math.max(0, Math.round(detail.eta_seconds)) } : {}),
+    };
 }
 
 function assertMinimaxVideoReferences(videoReferences: ReferenceVideo[]) {

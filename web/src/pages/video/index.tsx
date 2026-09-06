@@ -15,7 +15,7 @@ import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { isMinimaxVideoConfig, MINIMAX_VIDEO_MIME_TYPES, minimaxReferenceLabel, minimaxVideoReferenceError, minimaxVideoReferenceHint, MINIMAX_REFERENCE_LIMITS, normalizeMinimaxRatio } from "@/lib/minimax-video";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
-import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
+import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationProgress, type VideoGenerationTask } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useWorkbenchAgentStore } from "@/stores/use-workbench-agent-store";
 import { boolConfig, modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -95,6 +95,7 @@ export default function VideoPage() {
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [startedAt, setStartedAt] = useState(0);
     const [elapsedMs, setElapsedMs] = useState(0);
+    const [taskProgress, setTaskProgress] = useState<VideoGenerationProgress | null>(null);
     const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
     const [previewLog, setPreviewLog] = useState<GenerationLog | null>(null);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -206,6 +207,7 @@ export default function VideoPage() {
         }
         setElapsedMs(0);
         setRunning(true);
+        setTaskProgress(null);
         if (agentTaskId) updateAgentTask(agentTaskId, { status: "running", error: undefined });
         setPreviewLog(null);
         setResults([{ id: nanoid(), status: "pending" }]);
@@ -376,6 +378,7 @@ export default function VideoPage() {
                     return;
                 }
                 if (state.status === "failed") throw new Error(state.error);
+                if (state.progress) setTaskProgress(state.progress);
                 if (attempt === 119) throw new Error(t("videoWorkbench.timeout"));
                 await delay(log.task.provider === "minimax" ? 5000 : 2500);
             }
@@ -390,6 +393,7 @@ export default function VideoPage() {
             if (!activeLogIdsRef.current.size) {
                 setRunning(false);
                 setStartedAt(0);
+                setTaskProgress(null);
             }
         }
     };
@@ -577,7 +581,7 @@ export default function VideoPage() {
                         </div>
                         {results.length ? (
                             <div className="grid gap-4">
-                                {results.map((result) => (result.status === "success" && result.video ? <ResultVideoCard key={result.id} video={result.video} onDownload={downloadVideo} onSaveAsset={saveResultToAssets} /> : result.status === "failed" ? <FailedVideoCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={retryResult} /> : <PendingVideoCard key={result.id} />))}
+                                {results.map((result) => (result.status === "success" && result.video ? <ResultVideoCard key={result.id} video={result.video} onDownload={downloadVideo} onSaveAsset={saveResultToAssets} /> : result.status === "failed" ? <FailedVideoCard key={result.id} error={result.error || t("workbench.generationFailed")} onRetry={retryResult} /> : <PendingVideoCard key={result.id} progress={taskProgress} />))}
                             </div>
                         ) : (
                             <div className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-stone-300 text-center dark:border-stone-700 lg:min-h-[560px]">
@@ -659,13 +663,22 @@ function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedV
     );
 }
 
-function PendingVideoCard() {
+function PendingVideoCard({ progress }: { progress: VideoGenerationProgress | null }) {
     const { t } = useTranslation();
+    const percent = typeof progress?.percent === "number" ? Math.min(100, Math.max(0, Math.round(progress.percent))) : null;
     return (
         <div className="relative aspect-video overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-stone-500 dark:text-stone-400">
                 <LoaderCircle className="size-6 animate-spin" />
-                <span>{t("workbench.generating")}</span>
+                <span>{progress?.stage ? t(`canvas.node.progressStage.${progress.stage}`, { defaultValue: t("workbench.generating") }) : t("workbench.generating")}</span>
+                {percent !== null ? (
+                    <div className="w-2/5">
+                        <div className="h-1 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-700">
+                            <div className="h-full rounded-full bg-stone-500 transition-[width] duration-500 ease-out" style={{ width: `${percent}%` }} />
+                        </div>
+                        <div className="mt-1 text-center text-xs">{t("canvas.node.progressPercent", { percent })}</div>
+                    </div>
+                ) : null}
             </div>
         </div>
     );

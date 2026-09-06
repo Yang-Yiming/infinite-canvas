@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { ChevronRight, Copy, Download, Group, Image as ImageIcon, Music2, Puzzle, RefreshCw, Star, Trash2, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { formatBytes } from "@/lib/image-utils";
+import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -454,7 +454,7 @@ function NodeContent(props: NodeContentRendererProps) {
     if ((props.node.type === CanvasNodeType.Config || props.node.type === CanvasNodeType.Reference) && props.renderNodeContent) return props.renderNodeContent(props.node);
     if (props.isBatchRoot && props.node.type === CanvasNodeType.Image) return <ImageNodeContent {...props} />;
     if (props.node.type === CanvasNodeType.Text && props.node.metadata?.texts?.length && (props.node.metadata.status !== "error" || props.node.metadata.texts.some((text) => text.content))) return <TextContent {...props} />;
-    if (props.node.metadata?.status === "loading") return <LoadingContent theme={props.theme} />;
+    if (props.node.metadata?.status === "loading") return <LoadingContent node={props.node} theme={props.theme} />;
     if (props.node.metadata?.status === "error") return <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} />;
 
     const Renderer = nodeContentRenderers[props.node.type as CanvasNodeType];
@@ -499,12 +499,26 @@ function GroupNodeContent({ node, theme, groupChildCount }: NodeContentRendererP
     );
 }
 
-function LoadingContent({ theme }: Pick<NodeContentRendererProps, "theme">) {
+function LoadingContent({ node, theme }: Pick<NodeContentRendererProps, "node" | "theme">) {
     const { t } = useTranslation();
+    const progress = node.metadata?.videoProgress;
+    const percent = typeof progress?.percent === "number" ? Math.min(100, Math.max(0, Math.round(progress.percent))) : null;
+    const stage = progress?.stage ? t(`canvas.node.progressStage.${progress.stage}`, { defaultValue: t("canvas.node.generating") }) : t("canvas.node.generating");
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.activeStroke }}>
             <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />
-            <span className="text-[10px] tracking-[0.2em]">{t("canvas.node.generating")}</span>
+            <span className="text-[10px] tracking-[0.2em]">{stage}</span>
+            {percent !== null ? (
+                <div className="w-3/5">
+                    <div className="h-1 overflow-hidden rounded-full" style={{ background: theme.node.stroke }}>
+                        <div className="h-full rounded-full transition-[width] duration-500 ease-out" style={{ width: `${percent}%`, background: theme.node.activeStroke }} />
+                    </div>
+                    <div className="mt-1 flex items-center justify-center gap-1.5 text-[10px]" style={{ color: theme.node.muted }}>
+                        <span>{t("canvas.node.progressPercent", { percent })}</span>
+                        {typeof progress?.etaSeconds === "number" ? <span>{t("canvas.node.progressEta", { time: formatDuration(progress.etaSeconds * 1000) })}</span> : null}
+                    </div>
+                </div>
+            ) : null}
         </div>
     );
 }
