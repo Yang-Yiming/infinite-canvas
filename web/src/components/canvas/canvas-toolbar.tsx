@@ -367,6 +367,7 @@ function toolLabel(id: string, t: (key: string) => string) {
     if (id === "tool-audio") return t("canvas.toolbar.audio");
     if (id === "tool-config") return t("canvas.toolbar.config");
     if (id === "tool-group") return t("canvas.toolbar.group");
+    if (id === "tool-reference") return t("canvas.toolbar.reference");
     if (id === "tool-extensions") return t("canvas.toolbar.extensions");
     if (id === "tool-upload") return t("canvas.toolbar.upload");
     if (id === "tool-style") return t("canvas.toolbar.appearance");
