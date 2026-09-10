@@ -348,6 +348,7 @@ function InfiniteCanvasPage() {
                                   model: generationConfig.model,
                                   size: generationConfig.size,
                                   seconds: generationConfig.videoSeconds,
+                                  steps: generationConfig.videoSteps,
                                   vquality: generationConfig.vquality,
                                   generateAudio: generationConfig.videoGenerateAudio,
                                   watermark: generationConfig.videoWatermark,
@@ -2462,6 +2463,7 @@ function InfiniteCanvasPage() {
                             model: generationConfig.model,
                             size: generationConfig.size,
                             seconds: generationConfig.videoSeconds,
+                            steps: generationConfig.videoSteps,
                             vquality: generationConfig.vquality,
                             generateAudio: generationConfig.videoGenerateAudio,
                             watermark: generationConfig.videoWatermark,
@@ -2480,6 +2482,7 @@ function InfiniteCanvasPage() {
                         await completeVideoNodeTask(videoId, generationConfig, effectivePrompt, generationContext.referenceImages, generationContext.referenceVideos, generationContext.referenceAudios, controller.signal, {
                             size: generationConfig.size,
                             seconds: generationConfig.videoSeconds,
+                            steps: generationConfig.videoSteps,
                             vquality: generationConfig.vquality,
                             generateAudio: generationConfig.videoGenerateAudio,
                             watermark: generationConfig.videoWatermark,
@@ -2735,6 +2738,7 @@ function InfiniteCanvasPage() {
                     await completeVideoNodeTask(node.id, generationConfig, prompt, retryImages, [], [], controller.signal, {
                         size: generationConfig.size,
                         seconds: generationConfig.videoSeconds,
+                        steps: generationConfig.videoSteps,
                         vquality: generationConfig.vquality,
                         generateAudio: generationConfig.videoGenerateAudio,
                         watermark: generationConfig.videoWatermark,
