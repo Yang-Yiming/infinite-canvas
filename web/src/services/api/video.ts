@@ -48,16 +48,16 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 
 export async function waitForVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: WaitOptions): Promise<VideoGenerationResult> {
     const delayMs = 15000;
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    // Video generation can legitimately take a long time (queue + render), so polling has no deadline:
+    // it ends only when the task finishes, fails, or the caller aborts.
+    for (;;) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const state = await pollVideoGenerationTask(config, task, options);
         if (state.status === "completed") return state.result;
         if (state.status === "failed") throw videoTaskFailed(state.error);
         if (state.progress) options?.onProgress?.(state.progress);
-        if (attempt === 119) throw new Error(apiText("videoTimeout", { provider: task.provider === "minimax" ? "MiniMax " : "" }));
         await delay(delayMs, options?.signal);
     }
-    throw new Error(apiText("videoTimeout", { provider: "" }));
 }
 
 export function isVideoTaskFailed(error: unknown) {
