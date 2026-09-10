@@ -667,6 +667,7 @@ function ResultVideoCard({ video, onDownload, onSaveAsset }: { video: GeneratedV
 function PendingVideoCard({ progress }: { progress: VideoGenerationProgress | null }) {
     const { t } = useTranslation();
     const percent = typeof progress?.percent === "number" ? Math.min(100, Math.max(0, Math.round(progress.percent))) : null;
+    const step = typeof progress?.step === "number" && typeof progress?.steps === "number" ? t("canvas.node.progressStep", { step: progress.step, steps: progress.steps }) : null;
     return (
         <div className="relative aspect-video overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-stone-500 dark:text-stone-400">
@@ -677,7 +678,10 @@ function PendingVideoCard({ progress }: { progress: VideoGenerationProgress | nu
                         <div className="h-1 overflow-hidden rounded-full bg-stone-200 dark:bg-stone-700">
                             <div className="h-full rounded-full bg-stone-500 transition-[width] duration-500 ease-out" style={{ width: `${percent}%` }} />
                         </div>
-                        <div className="mt-1 text-center text-xs">{t("canvas.node.progressPercent", { percent })}</div>
+                        <div className="mt-1 flex items-center justify-center gap-1.5 text-center text-xs">
+                            <span>{t("canvas.node.progressPercent", { percent })}</span>
+                            {step ? <span>{step}</span> : null}
+                        </div>
                     </div>
                 ) : null}
             </div>

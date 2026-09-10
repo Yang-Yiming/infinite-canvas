@@ -260,7 +260,7 @@ export default {
         node: {
             node: "节点",
             untitled: "未命名节点", renameHint: "双击修改节点名称", group: "组", nodeCount: "{{count}} 个节点", generating: "生成中", failed: "生成失败", retry: "重试", missingPlugin: "缺少插件", missingPluginDescription: "节点类型“{{type}}”的插件未安装或未启用", generateImage: "用文本生图", generate: "生图", editText: "双击编辑文字", emptyImage: "空图片节点", emptyVideo: "空视频节点", emptyAudio: "空音频节点", audio: "音频", batchExpanded: "图片组已展开", batchCollapsed: "图片组已收起", createCopy: "创建副本", setPrimary: "设为主图",
-            progressStage: { queued: "排队中", preparing: "准备中", sampling: "生成中", decoding: "解码中", encoding: "编码中" }, progressPercent: "约 {{percent}}%", progressEta: "剩余约 {{time}}",
+            progressStage: { queued: "排队中", preparing: "准备中", sampling: "生成中", decoding: "解码中", encoding: "编码中" }, progressPercent: "约 {{percent}}%", progressEta: "剩余约 {{time}}", progressStep: "采样 {{step}}/{{steps}}",
         },
         sidePanel: {
             canvas: "画布", assets: "资产", prompts: "提示词库", resize: "调整左侧面板宽度", elements: "画布元素", select: "选择", searchNodes: "搜索节点", focusNode: "定位到节点", preview: "放大预览", noNodes: "画布暂无节点", clearAll: "取消全选", selected: "已选 {{count}}", exporting: "正在导出选中元素…", exportName: "画布元素-{{count}}个", exported: "已导出 {{count}} 个元素", exportFailed: "导出失败，请重试",

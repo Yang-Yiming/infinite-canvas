@@ -504,6 +504,7 @@ function LoadingContent({ node, theme }: Pick<NodeContentRendererProps, "node" |
     const progress = node.metadata?.videoProgress;
     const percent = typeof progress?.percent === "number" ? Math.min(100, Math.max(0, Math.round(progress.percent))) : null;
     const stage = progress?.stage ? t(`canvas.node.progressStage.${progress.stage}`, { defaultValue: t("canvas.node.generating") }) : t("canvas.node.generating");
+    const step = typeof progress?.step === "number" && typeof progress?.steps === "number" ? t("canvas.node.progressStep", { step: progress.step, steps: progress.steps }) : null;
     return (
         <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.activeStroke }}>
             <div className="size-10 animate-spin rounded-full border-2" style={{ borderColor: theme.node.stroke, borderTopColor: theme.node.activeStroke }} />
@@ -515,6 +516,7 @@ function LoadingContent({ node, theme }: Pick<NodeContentRendererProps, "node" |
                     </div>
                     <div className="mt-1 flex items-center justify-center gap-1.5 text-[10px]" style={{ color: theme.node.muted }}>
                         <span>{t("canvas.node.progressPercent", { percent })}</span>
+                        {step ? <span>{step}</span> : null}
                         {typeof progress?.etaSeconds === "number" ? <span>{t("canvas.node.progressEta", { time: formatDuration(progress.etaSeconds * 1000) })}</span> : null}
                     </div>
                 </div>

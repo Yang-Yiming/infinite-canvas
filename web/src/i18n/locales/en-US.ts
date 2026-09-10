@@ -260,7 +260,7 @@ export default {
         node: {
             node: "Node",
             untitled: "Untitled node", renameHint: "Double-click to rename the node", group: "Group", nodeCount: "{{count}} nodes", generating: "Generating", failed: "Generation failed", retry: "Retry", missingPlugin: "Plugin missing", missingPluginDescription: "The plugin for node type “{{type}}” is not installed or enabled", generateImage: "Generate image from text", generate: "Generate", editText: "Double-click to edit text", emptyImage: "Empty image node", emptyVideo: "Empty video node", emptyAudio: "Empty audio node", audio: "Audio", batchExpanded: "Image group expanded", batchCollapsed: "Image group collapsed", createCopy: "Create copy", setPrimary: "Set as primary",
-            progressStage: { queued: "Queued", preparing: "Preparing", sampling: "Generating", decoding: "Decoding", encoding: "Encoding" }, progressPercent: "About {{percent}}%", progressEta: "about {{time}} left",
+            progressStage: { queued: "Queued", preparing: "Preparing", sampling: "Generating", decoding: "Decoding", encoding: "Encoding" }, progressPercent: "About {{percent}}%", progressEta: "about {{time}} left", progressStep: "Step {{step}}/{{steps}}",
         },
         sidePanel: {
             canvas: "Canvas", assets: "Assets", prompts: "Prompt Library", resize: "Resize left panel", elements: "Canvas elements", select: "Select", searchNodes: "Search nodes", focusNode: "Focus node", preview: "Large preview", noNodes: "No nodes on this canvas", clearAll: "Clear all", selected: "{{count}} selected", exporting: "Exporting selected elements…", exportName: "canvas-elements-{{count}}", exported: "Exported {{count}} elements", exportFailed: "Export failed. Try again.",

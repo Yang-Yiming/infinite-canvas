@@ -26,7 +26,7 @@ export type VideoGenerationTaskState = { status: "pending"; progress?: VideoGene
 
 // Upstream (H3 adapter) optional progress fields; all of them may be absent on any poll response.
 export type VideoProgressDetail = { stage?: string; step?: number; steps?: number; stage_progress?: number; eta_seconds?: number; elapsed_seconds?: number; queue_position?: number; updated_at?: number };
-export type VideoGenerationProgress = { percent?: number; stage?: string; etaSeconds?: number };
+export type VideoGenerationProgress = { percent?: number; stage?: string; etaSeconds?: number; step?: number; steps?: number };
 
 /** Results for scripted (plugin) video models, which run their own create+poll in one shot at task creation. */
 const pluginVideoResults = new Map<string, VideoGenerationResult>();
@@ -218,11 +218,12 @@ async function pollMinimaxTask(config: AiConfig, task: VideoGenerationTask, opti
 }
 
 function readVideoProgress(percent?: number, detail?: VideoProgressDetail | null): VideoGenerationProgress | undefined {
-    if (typeof percent !== "number" && !detail?.stage) return undefined;
+    if (typeof percent !== "number" && !detail?.stage && typeof detail?.step !== "number") return undefined;
     return {
         ...(typeof percent === "number" && Number.isFinite(percent) ? { percent: Math.min(100, Math.max(0, Math.round(percent))) } : {}),
         ...(detail?.stage ? { stage: detail.stage } : {}),
         ...(typeof detail?.eta_seconds === "number" && Number.isFinite(detail.eta_seconds) ? { etaSeconds: Math.max(0, Math.round(detail.eta_seconds)) } : {}),
+        ...(typeof detail?.step === "number" && typeof detail?.steps === "number" && detail.steps > 0 ? { step: Math.max(0, Math.floor(detail.step)), steps: Math.floor(detail.steps) } : {}),
     };
 }
 

@@ -85,7 +85,7 @@ export type CanvasNodeMetadata = {
     durationMs?: number;
     videoTaskId?: string;
     // Latest video generation progress reported by polling (H3 adapter `progress`/`progress_detail`); absent when upstream has none.
-    videoProgress?: { percent?: number; stage?: string; etaSeconds?: number };
+    videoProgress?: { percent?: number; stage?: string; etaSeconds?: number; step?: number; steps?: number };
     groupId?: string;
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
 };
