@@ -46,6 +46,7 @@ export function buildMinimaxVideoPayload(options: {
     ratio?: string;
     resolution?: string;
     duration?: string | number;
+    steps?: number;
 }) {
     const content: Array<Record<string, unknown>> = [];
     const text = options.prompt.trim();
@@ -69,5 +70,6 @@ export function buildMinimaxVideoPayload(options: {
         ratio: isTextOnly && normalizeMinimaxRatio(options.ratio) === "adaptive" ? "16:9" : normalizeMinimaxRatio(options.ratio),
         resolution: normalizeMinimaxResolution(options.resolution || ""),
         duration: normalizeMinimaxDuration(options.duration),
+        ...(options.steps ? { steps: options.steps } : {}),
     };
 }

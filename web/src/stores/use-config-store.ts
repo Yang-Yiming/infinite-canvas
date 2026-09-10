@@ -40,6 +40,7 @@ export type AiConfig = {
     audioSpeed: string;
     audioInstructions: string;
     videoSeconds: string;
+    videoSteps: string;
     vquality: string;
     videoGenerateAudio: string;
     videoWatermark: string;
@@ -103,6 +104,7 @@ export const defaultConfig: AiConfig = {
     audioSpeed: "1",
     audioInstructions: "",
     videoSeconds: "6",
+    videoSteps: "",
     vquality: "720",
     videoGenerateAudio: "true",
     videoWatermark: "false",
@@ -259,6 +261,7 @@ export const useConfigStore = create<ConfigStore>()(
                         audioInstructions: config.audioInstructions || "",
                         reasoningEffort: config.reasoningEffort || "auto",
                         videoSeconds: config.videoSeconds || "6",
+                        videoSteps: config.videoSteps ?? "",
                         vquality: config.vquality || "720",
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",

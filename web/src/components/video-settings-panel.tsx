@@ -30,7 +30,7 @@ export const videoSecondOptions = secondOptions.map((value) => String(value));
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark", value: string) => void;
+    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoSteps" | "videoGenerateAudio" | "videoWatermark", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
@@ -112,6 +112,7 @@ function MiniMaxVideoSettingsPanel({ config, onConfigChange, theme, showTitle, c
     const resolution = normalizeMinimaxResolution(config.vquality);
     const ratio = normalizeMinimaxRatio(config.size);
     const duration = normalizeMinimaxDuration(config.videoSeconds);
+    const steps = config.videoSteps || "";
 
     return (
         <ImageSettingsTheme theme={theme}>
@@ -153,6 +154,14 @@ function MiniMaxVideoSettingsPanel({ config, onConfigChange, theme, showTitle, c
                         ))}
                     </div>
                     <NumberInput value={String(duration)} min={4} max={15} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
+                </SettingGroup>
+                <SettingGroup title={t("settingsPanels.video.steps")} color={theme.node.muted}>
+                    <div className="grid grid-cols-3 gap-2.5">
+                        <OptionPill selected={!steps} theme={theme} onClick={() => onConfigChange("videoSteps", "")}>
+                            {t("settingsPanels.video.stepsDefault")}
+                        </OptionPill>
+                        <NumberInput value={steps} min={1} max={60} theme={theme} placeholder={t("settingsPanels.video.stepsDefault")} onChange={(value) => onConfigChange("videoSteps", value)} />
+                    </div>
                 </SettingGroup>
             </div>
         </ImageSettingsTheme>
@@ -233,8 +242,8 @@ function DimensionInput({ prefix, value, disabled, theme, onChange }: { prefix: 
     );
 }
 
-function NumberInput({ value, min, max, theme, onChange }: { value: string; min: number; max: number; theme: CanvasTheme; onChange: (value: string) => void }) {
-    return <input type="number" min={min} max={max} className="h-9 rounded-full border bg-transparent px-3 text-center text-sm outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" style={{ borderColor: theme.node.stroke, color: theme.node.text, WebkitTextFillColor: theme.node.text }} value={value} onChange={(event) => onChange(event.target.value)} onMouseDown={(event) => event.stopPropagation()} />;
+function NumberInput({ value, min, max, theme, placeholder, onChange }: { value: string; min: number; max: number; theme: CanvasTheme; placeholder?: string; onChange: (value: string) => void }) {
+    return <input type="number" min={min} max={max} placeholder={placeholder} className="h-9 rounded-full border bg-transparent px-3 text-center text-sm outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" style={{ borderColor: theme.node.stroke, color: theme.node.text, WebkitTextFillColor: theme.node.text }} value={value} onChange={(event) => onChange(event.target.value)} onMouseDown={(event) => event.stopPropagation()} />;
 }
 
 function SizePreview({ width, height, color }: { width: number; height: number; color: string }) {

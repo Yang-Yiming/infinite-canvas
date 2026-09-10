@@ -192,7 +192,7 @@ async function createMinimaxTask(config: AiConfig, model: string, prompt: string
     const videoUrls = await Promise.all(videoReferences.slice(0, MINIMAX_REFERENCE_LIMITS.videos).map((video) => resolveMinimaxVideoUrl(video)));
     const audioUrls = await Promise.all(audioReferences.slice(0, MINIMAX_REFERENCE_LIMITS.audios).map((audio) => resolveMinimaxAudioUrl(audio)));
     if (!prompt.trim() && !imageUrls.length && !videoUrls.length && !audioUrls.length) throw new Error(apiText("videoPromptRequired"));
-    const payload = buildMinimaxVideoPayload({ model: modelOptionName(model), prompt, imageUrls, videoUrls, audioUrls, ratio: config.size, resolution: config.vquality, duration: config.videoSeconds });
+    const payload = buildMinimaxVideoPayload({ model: modelOptionName(model), prompt, imageUrls, videoUrls, audioUrls, ratio: config.size, resolution: config.vquality, duration: config.videoSeconds, steps: normalizeVideoSteps(config.videoSteps) ?? undefined });
 
     try {
         const created = unwrapMinimaxResponse((await axios.post<ApiEnvelope<MinimaxTask>>(minimaxApiUrl(config, "/v2/video_generation"), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
@@ -289,6 +289,11 @@ function assertVideoConfig(config: AiConfig, model: string) {
 function normalizeVideoSeconds(value: string) {
     const seconds = Math.floor(Number(value) || 6);
     return String(Math.max(1, Math.min(20, seconds)));
+}
+
+function normalizeVideoSteps(value: string) {
+    const steps = Math.floor(Number(value));
+    return Number.isFinite(steps) && steps > 0 ? Math.min(60, steps) : null;
 }
 
 function normalizeVideoSize(value: string) {

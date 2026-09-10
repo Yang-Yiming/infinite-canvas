@@ -64,6 +64,7 @@ export type CanvasNodeMetadata = {
     texts?: CanvasNodeText[];
     primaryTextId?: string;
     seconds?: string;
+    steps?: string;
     vquality?: string;
     generateAudio?: string;
     watermark?: string;
