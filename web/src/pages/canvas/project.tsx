@@ -2281,9 +2281,8 @@ function InfiniteCanvasPage() {
             const sourceTextContent = sourceNode?.type === CanvasNodeType.Text ? sourceNode.metadata?.content?.trim() || "" : "";
             const editingTextNode = mode === "text" && Boolean(sourceTextContent);
             const skillPrefix = mode === "text" ? buildSkillPromptPrefix(sourceNode?.metadata?.skillId) : "";
-            const generationContext = await hydrateNodeGenerationContext(
-                buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, `${skillPrefix}${editingTextNode ? t("canvas.projectPage.editTextPrompt", { source: sourceTextContent, prompt }) : prompt}`),
-            );
+            const basePrompt = editingTextNode ? t("canvas.projectPage.editTextPrompt", { source: sourceTextContent, prompt }) : prompt;
+            const generationContext = await hydrateNodeGenerationContext(buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, `${skillPrefix}${basePrompt}`));
             const effectivePrompt = generationContext.prompt.trim();
             if (runController.signal.aborted) {
                 finishGenerationRequest(nodeId, runController);
@@ -2536,12 +2535,12 @@ function InfiniteCanvasPage() {
                 const rootNode: CanvasNodeData = {
                     id: rootId,
                     type: CanvasNodeType.Text,
-                    title: effectivePrompt.slice(0, 32) || "Generated Text",
+                    title: prompt.slice(0, 32) || "Generated Text",
                     position: isEmptyTextNode ? sourceNode.position : { x: parentPosition.x + parentConfig.width + 96, y: parentPosition.y + parentConfig.height / 2 - textConfig.height / 2 },
                     width: isEmptyTextNode ? sourceNode.width : textConfig.width,
                     height: isEmptyTextNode ? sourceNode.height : textConfig.height,
                     metadata: {
-                        prompt: effectivePrompt,
+                        prompt: basePrompt,
                         status: NODE_STATUS_LOADING,
                         fontSize: 14,
                         model: generationConfig.model,
@@ -2549,6 +2548,8 @@ function InfiniteCanvasPage() {
                         textCount,
                         texts: textIds.map((id) => ({ id, status: NODE_STATUS_LOADING, content: "" })),
                         primaryTextId: textIds[0],
+                        // Skill stays on the node so retry/regeneration re-reads the asset instead of replaying text baked into the prompt.
+                        ...(sourceNode?.metadata?.skillId ? { skillId: sourceNode.metadata.skillId } : {}),
                     },
                 };
                 pendingChildIds = [rootId];
@@ -2721,10 +2722,11 @@ function InfiniteCanvasPage() {
             try {
                 if (node.type === CanvasNodeType.Text) {
                     if (!context) return;
+                    const skillPrefix = buildSkillPromptPrefix(sourceNode.metadata?.skillId || node.metadata?.skillId);
                     let streamed = "";
                     const answer = await requestImageQuestion(
                         generationConfig,
-                        buildNodeResponseMessages({ ...context, prompt }),
+                        buildNodeResponseMessages({ ...context, prompt: `${skillPrefix}${prompt}` }),
                         (text) => {
                             streamed = text;
                             setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, type: CanvasNodeType.Text, metadata: { ...item.metadata, content: text, status: NODE_STATUS_LOADING } } : item)));
