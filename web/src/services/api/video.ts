@@ -6,7 +6,7 @@ import { dataUrlToFile } from "@/lib/image-utils";
 import { buildMinimaxVideoPayload, isMinimaxVideoConfig, minimaxVideoReferenceError, MINIMAX_REFERENCE_LIMITS } from "@/lib/minimax-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
-import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, type AiConfig } from "@/stores/use-config-store";
+import { boolConfig, buildApiUrl, modelOptionName, resolveModelRequestConfig, resolveModelScript, withLocalProxy, type AiConfig } from "@/stores/use-config-store";
 import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -240,7 +240,7 @@ function assertMinimaxVideoReferences(videoReferences: ReferenceVideo[]) {
 }
 
 function minimaxApiUrl(config: AiConfig, path: string) {
-    return `${config.baseUrl.trim().replace(/\/+$/, "")}${path}`;
+    return withLocalProxy(`${config.baseUrl.trim().replace(/\/+$/, "")}${path}`);
 }
 
 async function resolveMinimaxImageUrl(config: AiConfig, image: ReferenceImage) {
@@ -271,7 +271,7 @@ async function resolveMinimaxAudioUrl(audio: ReferenceAudio) {
 
 async function videoResultFromUrl(url: string, options?: RequestOptions): Promise<VideoGenerationResult> {
     try {
-        const response = await axios.get<Blob>(url, { responseType: "blob", signal: options?.signal });
+        const response = await axios.get<Blob>(withLocalProxy(url), { responseType: "blob", signal: options?.signal });
         await assertVideoBlob(response.data);
         return { blob: response.data };
     } catch (error) {
