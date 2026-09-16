@@ -116,6 +116,8 @@ const IMAGE_MAX_PIXELS = 8294400;
 const IMAGE_MAX_EDGE = 3840;
 const IMAGE_MAX_RATIO = 3;
 const IMAGE_OUTPUT_FORMAT = "png";
+// 与 image-storage 的下载超时保持一致，避免接口挂起时节点一直停在生成中。
+const IMAGE_REQUEST_TIMEOUT_MS = 10 * 60_000;
 
 const GEMINI_SUPPORTED_RATIOS = ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"];
 const GEMINI_IMAGE_SIZE_BY_QUALITY: Record<string, string> = { low: "1K", medium: "2K", high: "4K", standard: "1K", hd: "2K" };
@@ -294,7 +296,7 @@ function isResponseFormatError(error: unknown) {
 }
 
 async function requestImages(requestConfig: AiConfig, path: string, json: boolean, buildBody: (format: string) => Record<string, unknown> | FormData, options?: RequestOptions) {
-    const send = (format: string) => axios.post<ImageApiResponse>(aiApiUrl(requestConfig, path), buildBody(format), { headers: aiHeaders(requestConfig, json ? "application/json" : undefined), signal: options?.signal });
+    const send = (format: string) => axios.post<ImageApiResponse>(aiApiUrl(requestConfig, path), buildBody(format), { headers: aiHeaders(requestConfig, json ? "application/json" : undefined), signal: options?.signal, timeout: IMAGE_REQUEST_TIMEOUT_MS });
     try {
         return await parseImageResponse((await send("b64_json")).data, options?.signal);
     } catch (error) {
@@ -342,6 +344,7 @@ function readApiErrorMessage(value: unknown): string {
 function readAxiosError(error: unknown, fallback: string) {
     if (axios.isCancel(error)) return apiText("requestCanceled");
     if (axios.isAxiosError(error)) {
+        if (error.code === "ECONNABORTED" || error.code === "ETIMEDOUT") return apiText("imageTimeout");
         const responseData = error.response?.data;
         // Prefer the API error from the response body.
         const apiMsg = readApiErrorMessage(responseData);
@@ -786,7 +789,7 @@ async function requestGeminiImagesOnce(config: AiConfig, prompt: string, referen
             ...toGeminiBody(config, [{ role: "user", content: prompt }], { generationConfig: { responseModalities: ["TEXT", "IMAGE"], ...resolveGeminiImageConfig(config) } }),
             contents: [{ role: "user", parts }],
         },
-        { headers: geminiHeaders(config), signal: options?.signal },
+        { headers: geminiHeaders(config), signal: options?.signal, timeout: IMAGE_REQUEST_TIMEOUT_MS },
     );
     return parseGeminiImagePayload(response.data);
 }
