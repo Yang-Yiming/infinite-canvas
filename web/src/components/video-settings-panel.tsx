@@ -1,32 +1,25 @@
 import { type ReactNode } from "react";
+import { Slider } from "antd";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { isMinimaxVideoConfig, minimaxDurationOptions, minimaxRatioOptions, minimaxResolutionOptions, normalizeMinimaxDuration, normalizeMinimaxRatio, normalizeMinimaxResolution } from "@/lib/minimax-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
+import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
 import { type AiConfig } from "@/stores/use-config-store";
 
 const resolutionOptions = [
-    { value: "720", label: "720p" },
     { value: "480", label: "480p" },
+    { value: "720", label: "720p" },
+    { value: "1080", label: "1080p" },
 ];
 
-const sizeOptions = [
-    { value: "1280x720", labelKey: "landscape", width: 1280, height: 720 },
-    { value: "720x1280", labelKey: "portrait", width: 720, height: 1280 },
-    { value: "1024x1024", labelKey: "square", width: 1024, height: 1024 },
-    { value: "1792x1024", labelKey: "widescreen", width: 1792, height: 1024 },
-    { value: "1024x1792", labelKey: "tall", width: 1024, height: 1792 },
-    { value: "auto", labelKey: "auto", width: 0, height: 0 },
-];
-
-const secondOptions = [6, 10, 12, 16, 20];
 const videoRatioLabelKeys: Record<string, string> = { "16:9": "landscape", "9:16": "portrait", "1:1": "square", "4:3": "standardLandscape", "3:4": "standardPortrait", "21:9": "cinematic", adaptive: "adaptive" };
 
 export const videoResolutionOptions = resolutionOptions.map((item) => ({ value: item.value, label: item.label }));
-export const videoSizeOptions = sizeOptions.map((item) => ({ value: item.value, get label() { return i18n.t(`settingsPanels.video.sizes.${item.labelKey}`); } }));
-export const videoSecondOptions = secondOptions.map((value) => String(value));
+export const videoSizeOptions = videoRatioOptions.map((item) => ({ value: item.value, get label() { return item.value === "auto" ? i18n.t("settingsPanels.common.auto") : item.value; } }));
+export const videoSecondsRange = { min: VIDEO_SECONDS_MIN, max: VIDEO_SECONDS_MAX };
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
@@ -42,13 +35,17 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         return <MiniMaxVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
     }
 
-    const seconds = config.videoSeconds || "6";
-    const size = normalizeVideoSizeValue(config.size);
-    const dimensions = readSizeDimensions(size);
-    const resolution = normalizeVideoResolutionValue(config.vquality);
-    const updateDimension = (key: "width" | "height", value: number | null) => {
-        const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
-        onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
+    const seconds = Number(clampVideoSeconds(config.videoSeconds || "6"));
+    const resolution = parseVideoResolution(config.vquality);
+    const selectedRatio = inferVideoRatio(config.size || "auto");
+    const dimensions = readVideoDimensions(config.size || "auto", resolution, selectedRatio);
+    const applySize = (nextResolution: string, ratio: string) => {
+        onConfigChange("vquality", nextResolution);
+        onConfigChange("size", computeVideoSize(nextResolution, ratio));
+    };
+    const selectResolution = (nextResolution: string) => {
+        if (selectedRatio === "auto") onConfigChange("vquality", nextResolution);
+        else applySize(nextResolution, selectedRatio);
     };
 
     return (
@@ -56,50 +53,44 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
             <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
                 {showTitle ? <div className="text-lg font-semibold">{t("settingsPanels.video.title")}</div> : null}
                 <SettingGroup title={t("settingsPanels.video.quality")} color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
+                    <div className="grid grid-cols-4 gap-2.5">
                         {resolutionOptions.map((item) => (
-                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
+                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => selectResolution(item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
-                        <ResolutionInput value={resolution} theme={theme} onChange={(value) => onConfigChange("vquality", value)} />
+                        <ResolutionInput value={resolution} theme={theme} onChange={selectResolution} />
                     </div>
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.size")} color={theme.node.muted}>
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
-                        <DimensionInput prefix="W" value={dimensions.width} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("width", value)} />
+                        <DimensionInput prefix="W" value={dimensions.width} disabled={selectedRatio === "auto"} theme={theme} onChange={(value) => updateDimension("width", value, dimensions, onConfigChange)} />
                         <span className="text-lg opacity-45">↔</span>
-                        <DimensionInput prefix="H" value={dimensions.height} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("height", value)} />
+                        <DimensionInput prefix="H" value={dimensions.height} disabled={selectedRatio === "auto"} theme={theme} onChange={(value) => updateDimension("height", value, dimensions, onConfigChange)} />
                     </div>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {sizeOptions.map((item) => (
+                </SettingGroup>
+                <SettingGroup title={t("settingsPanels.video.ratio")} color={theme.node.muted}>
+                    <div className="grid grid-cols-4 gap-2.5">
+                        {videoRatioOptions.map((item) => (
                             <button
                                 key={item.value}
                                 type="button"
-                                className="flex h-[78px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
-                                style={{ borderColor: size === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+                                className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
+                                style={{ borderColor: selectedRatio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
                                 onMouseDown={(event) => event.stopPropagation()}
-                                onClick={() => onConfigChange("size", item.value)}
+                                onClick={() => applySize(resolution, item.value)}
                             >
                                 <SizePreview width={item.width} height={item.height} color={theme.node.text} />
-                                <span>{t(`settingsPanels.video.sizes.${item.labelKey}`)}</span>
-                                {item.value === "auto" ? null : (
-                                    <span className="text-[11px] leading-none opacity-55">
-                                        {item.value}
-                                    </span>
-                                )}
+                                <span>{item.value === "auto" ? t("settingsPanels.common.auto") : item.value}</span>
                             </button>
                         ))}
                     </div>
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {secondOptions.map((value) => (
-                            <OptionPill key={value} selected={seconds === String(value)} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
-                                {value}s
-                            </OptionPill>
-                        ))}
-                        <NumberInput value={seconds} min={1} max={20} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
+                    <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
+                        <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_MIN} max={VIDEO_SECONDS_MAX} step={1} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
+                        <SecondsInput value={seconds} theme={theme} onCommit={(value) => onConfigChange("videoSeconds", String(value))} />
+                        <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>s</span>
                     </div>
                 </SettingGroup>
             </div>
@@ -176,12 +167,9 @@ export function videoResolutionLabel(value: string) {
 }
 
 export function videoSizeLabel(value: string) {
-    const ratio = normalizeMinimaxRatio(value);
     if (value === "adaptive" || value === "auto") return i18n.t("settingsPanels.video.adaptive");
-    if (ratio === value) return i18n.t(`settingsPanels.video.ratios.${videoRatioLabelKeys[ratio]}`);
-    const size = normalizeVideoSizeValue(value);
-    const option = sizeOptions.find((item) => item.value === size);
-    return option ? i18n.t(`settingsPanels.video.sizes.${option.labelKey}`) : size;
+    const ratio = inferVideoRatio(value);
+    return ratio === "auto" ? i18n.t("settingsPanels.video.adaptive") : ratio;
 }
 
 export function videoSecondsLabel(value: string) {
@@ -189,16 +177,19 @@ export function videoSecondsLabel(value: string) {
     return `${value || "6"}s`;
 }
 
-export function normalizeVideoSizeValue(value: string) {
-    if (value === "auto") return "auto";
+export function normalizeVideoSizeValue(value: string, resolution = "720") {    if (value === "auto") return "auto";
     if (/^\d+x\d+$/.test(value || "")) return value;
-    return ["9:16", "2:3", "3:4"].includes(value) ? "720x1280" : "1280x720";
+    const ratio = inferVideoRatio(value);
+    return ratio === "auto" ? "auto" : computeVideoSize(resolution, ratio);
 }
 
 export function normalizeVideoResolutionValue(value: string) {
-    if (value === "480p" || value === "low") return "480";
-    if (value === "720p" || value === "auto" || value === "high" || value === "medium") return "720";
-    return value.replace(/p$/i, "") || "720";
+    return parseVideoResolution(value);
+}
+
+function updateDimension(key: "width" | "height", value: number | null, dimensions: { width: number; height: number }, onConfigChange: VideoSettingsPanelProps["onConfigChange"]) {
+    const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
+    onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
 }
 
 function OptionPill({ selected, disabled = false, theme, onClick, children }: { selected: boolean; disabled?: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
@@ -231,6 +222,32 @@ function ResolutionInput({ value, theme, onChange }: { value: string; theme: Can
     );
 }
 
+function SecondsInput({ value, theme, onCommit }: { value: number; theme: CanvasTheme; onCommit: (value: number) => void }) {
+    const commit = (input: HTMLInputElement) => {
+        const next = Number(clampVideoSeconds(input.value));
+        input.value = String(next);
+        onCommit(next);
+    };
+
+    return (
+        <label className="flex h-9 w-[68px] shrink-0 overflow-hidden rounded-xl text-sm" style={{ background: theme.node.fill, color: theme.node.text }}>
+            <input
+                type="number"
+                min={VIDEO_SECONDS_MIN}
+                max={VIDEO_SECONDS_MAX}
+                className="min-w-0 flex-1 bg-transparent px-2 text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                defaultValue={value}
+                key={value}
+                onBlur={(event) => commit(event.currentTarget)}
+                onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                }}
+                onMouseDown={(event) => event.stopPropagation()}
+            />
+        </label>
+    );
+}
+
 function DimensionInput({ prefix, value, disabled, theme, onChange }: { prefix: string; value: number; disabled: boolean; theme: CanvasTheme; onChange: (value: number | null) => void }) {
     return (
         <label className="flex h-9 overflow-hidden rounded-xl text-sm" style={{ background: theme.node.fill, color: theme.node.text, opacity: disabled ? 0.55 : 1 }}>
@@ -245,7 +262,6 @@ function DimensionInput({ prefix, value, disabled, theme, onChange }: { prefix: 
 function NumberInput({ value, min, max, theme, placeholder, onChange }: { value: string; min: number; max: number; theme: CanvasTheme; placeholder?: string; onChange: (value: string) => void }) {
     return <input type="number" min={min} max={max} placeholder={placeholder} className="h-9 rounded-full border bg-transparent px-3 text-center text-sm outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" style={{ borderColor: theme.node.stroke, color: theme.node.text, WebkitTextFillColor: theme.node.text }} value={value} onChange={(event) => onChange(event.target.value)} onMouseDown={(event) => event.stopPropagation()} />;
 }
-
 function SizePreview({ width, height, color }: { width: number; height: number; color: string }) {
     if (!width || !height) return null;
     const longSide = Math.max(width, height);

@@ -16,7 +16,7 @@ Select **Edit** to open the prompt panel below the node:
 - Use `@` to reference connected images, text, video, or audio. Image references appear as thumbnails and are numbered automatically when sent to the model.
 - The model selection applies only to the current node. Fetch or enter model names in global Settings first.
 
-To generate an image from text, prepare the prompt and select **Generate Image**. Infinite Canvas creates and connects a generation configuration node, starts generation, and lets you adjust the model, aspect ratio, and output count before retrying.
+To generate an image from text, prepare the prompt and select **Generate Image**. Infinite Canvas creates and connects a generation configuration node, starts generation, and lets you adjust the model, resolution (`1k` / `2k` / `4k` / auto), aspect ratio, and output count before retrying.
 
 ## Image nodes
 
@@ -29,6 +29,8 @@ To generate an image from text, prepare the prompt and select **Generate Image**
 ## Video nodes
 
 Create a video node from the toolbar or upload a local video. Video nodes use the native player. An empty video node can generate into itself, while generation started from text, images, or configuration nodes creates a connected video node.
+
+Video settings use `480p` / `720p` / `1080p` with `1:1`, `3:4`, `4:3`, `16:9`, `9:16`, `21:9`, or auto, and compute width and height from that pair. Duration is a 4–30 second slider. MiniMax H3 channels use 768P / 2K with adaptive ratio, a 4–15 second duration, and an optional sampling-step value.
 
 The OpenAI-compatible flow uses `POST /v1/videos`, `GET /v1/videos/{id}`, and `GET /v1/videos/{id}/content`. After a remote task is created, its ID is stored on the video node so a page refresh can keep polling, or you can click **Get task status**. Polling stops when the video is ready, the task fails, or the status request errors.
 

@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { dataUrlToFile } from "@/lib/image-utils";
+import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/media-size";
 import { buildMinimaxVideoPayload, isMinimaxVideoConfig, minimaxVideoReferenceError, MINIMAX_REFERENCE_LIMITS } from "@/lib/minimax-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
@@ -109,9 +110,9 @@ async function createPluginVideoTask(config: AiConfig, model: string, script: st
             images: refs,
             params: {
                 seconds: normalizeVideoSeconds(config.videoSeconds),
-                size: normalizeVideoSize(config.size),
+                size: normalizeVideoSize(config.size, config.vquality),
                 resolution: normalizeVideoResolution(config.vquality),
-                ratio: config.size,
+                ratio: videoAspectRatio(config.size),
                 generateAudio: boolConfig(config.videoGenerateAudio, true),
                 watermark: boolConfig(config.videoWatermark, false),
             },
@@ -152,7 +153,7 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     body.append("model", modelOptionName(model));
     body.append("prompt", prompt);
     body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
-    if (normalizeVideoSize(config.size)) body.append("size", normalizeVideoSize(config.size)!);
+    body.append("size", normalizeVideoSize(config.size, config.vquality) || "1280x720");
     body.append("resolution_name", normalizeVideoResolution(config.vquality));
     body.append("preset", "normal");
     const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
@@ -287,9 +288,13 @@ function assertVideoConfig(config: AiConfig, model: string) {
     if (config.apiFormat === "gemini") throw new Error(apiText("geminiVideoUnsupported"));
 }
 
+function videoAspectRatio(size: string) {
+    const ratio = inferVideoRatio(size);
+    return ratio === "auto" ? "16:9" : ratio;
+}
+
 function normalizeVideoSeconds(value: string) {
-    const seconds = Math.floor(Number(value) || 6);
-    return String(Math.max(1, Math.min(20, seconds)));
+    return clampVideoSeconds(value);
 }
 
 function normalizeVideoSteps(value: string) {
@@ -297,11 +302,12 @@ function normalizeVideoSteps(value: string) {
     return Number.isFinite(steps) && steps > 0 ? Math.min(60, steps) : null;
 }
 
-function normalizeVideoSize(value: string) {
+function normalizeVideoSize(value: string, resolution?: string) {
     if (value === "auto") return null;
-    const size = value || "1280x720";
-    if (/^\d+x\d+$/.test(size)) return size;
-    return ["9:16", "2:3", "3:4"].includes(size) ? "720x1280" : "1280x720";
+    if (/^\d+x\d+$/.test(value || "")) return value;
+    const ratio = inferVideoRatio(value || "16:9");
+    if (ratio === "auto") return null;
+    return computeVideoSize(resolution || "720", ratio);
 }
 
 function normalizeVideoResolution(value: string) {

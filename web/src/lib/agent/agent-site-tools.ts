@@ -3,9 +3,10 @@ import type { NavigateFunction } from "react-router-dom";
 import i18n from "@/i18n";
 import { fetchPrompts } from "@/services/api/prompts";
 import { uploadImage } from "@/services/image-storage";
-import { imageAspectOptions, imageQualityOptions } from "@/components/image-settings-panel";
-import { videoResolutionOptions, videoSecondOptions, videoSizeOptions } from "@/components/video-settings-panel";
+import { imageAspectOptions, imageQualityOptions, imageScaleOptions } from "@/components/image-settings-panel";
+import { videoResolutionOptions, videoSecondsRange, videoSizeOptions } from "@/components/video-settings-panel";
 import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import { clampVideoSeconds } from "@/lib/media-size";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { modelOptionLabel, modelOptionName, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
@@ -152,6 +153,7 @@ function getImageConfig() {
         current: { model, modelName: modelOptionName(model), quality: config.quality || "auto", size: config.size || "1:1", count: config.count || "1" },
         models: selectableModelsByCapability(config, "image").map((value) => ({ value, label: modelOptionLabel(config, value) })),
         qualityOptions: imageQualityOptions,
+        scaleOptions: imageScaleOptions,
         sizeOptions: imageAspectOptions,
         countRange: { min: 1, max: 15 },
     };
@@ -200,7 +202,7 @@ function getVideoConfig() {
         },
         models: selectableModelsByCapability(config, "video").map((value) => ({ value, label: modelOptionLabel(config, value) })),
         sizeOptions: videoSizeOptions,
-        secondsOptions: videoSecondOptions,
+        secondsRange: videoSecondsRange,
         resolutionOptions: videoResolutionOptions,
     };
 }
@@ -217,9 +219,10 @@ function runVideoWorkbench(input: SiteToolInput, navigate: NavigateFunction) {
         configStore.updateConfig("size", input.size);
         applied.size = input.size;
     }
-    if (typeof input.seconds === "string" && input.seconds.trim()) {
-        configStore.updateConfig("videoSeconds", input.seconds);
-        applied.seconds = input.seconds;
+    if (input.seconds != null && String(input.seconds).trim()) {
+        const seconds = clampVideoSeconds(String(input.seconds));
+        configStore.updateConfig("videoSeconds", seconds);
+        applied.seconds = seconds;
     }
     if (typeof input.resolution === "string" && input.resolution.trim()) {
         configStore.updateConfig("vquality", input.resolution);
