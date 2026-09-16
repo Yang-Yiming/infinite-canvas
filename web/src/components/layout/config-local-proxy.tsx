@@ -38,7 +38,7 @@ export function ConfigLocalProxy() {
                         </div>
                         <div className="mt-1 text-xs text-stone-500">{t("config.proxy.description")}</div>
                     </div>
-                    <Switch checked={config.proxyEnabled} onChange={(checked) => updateConfig("proxyEnabled", checked)} />
+                    <Switch checked={Boolean(config.proxyEnabled)} onChange={(checked) => updateConfig("proxyEnabled", checked)} />
                 </div>
                 {config.proxyEnabled ? (
                     <>
@@ -51,7 +51,7 @@ export function ConfigLocalProxy() {
                         </div>
                         <Form.Item label={t("config.proxy.address")} extra={t("config.proxy.addressDescription")} className="mt-3 mb-0">
                             <Input
-                                value={config.proxyUrl}
+                                value={config.proxyUrl || ""}
                                 placeholder={DEFAULT_LOCAL_PROXY_URL}
                                 onChange={(event) => updateConfig("proxyUrl", event.target.value)}
                                 onBlur={(event) => updateConfig("proxyUrl", normalizeLocalProxyUrl(event.target.value) || DEFAULT_LOCAL_PROXY_URL)}

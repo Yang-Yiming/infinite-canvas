@@ -482,8 +482,8 @@ export function buildApiUrl(baseUrl: string, path: string) {
     return withLocalProxy(`${apiBaseUrl}${path}`);
 }
 
-export function normalizeLocalProxyUrl(value: string) {
-    const trimmed = value.trim().replace(/\/+$/, "");
+export function normalizeLocalProxyUrl(value: string | undefined) {
+    const trimmed = (value || "").trim().replace(/\/+$/, "");
     if (!trimmed) return "";
     return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
