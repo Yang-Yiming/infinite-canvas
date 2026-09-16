@@ -55,14 +55,20 @@ The current release needs manual verification in these areas:
 - Canvas MiniMax video references: generating video from a generation config node with connected video/audio references and a MiniMax model should send those references to MiniMax instead of failing with "video references is not iterable"; the abort signal is now wired correctly so Stop should interrupt canvas video generation; OpenAI-format video models with connected video/audio references should surface a clear unsupported-references error instead of silently ignoring them.
 - Reference pack node: a new built-in node (bottom toolbar, node create menu, and drag-from-node create menu) can bundle references from anywhere on the canvas by connecting image, video, audio, and text nodes into it; the node body lists the packed references with thumbnails, a remove button per item, and a plus button entering canvas selection. Connecting the pack to a generation node or generation config node should pass every packed reference as if each were connected directly — video/audio references included in video generation and composer `@` mentions — while nested packs expand recursively and packs referencing each other in a cycle must not hang. Clicking or creating a reference pack must not open a prompt panel, and the side panel element list should filter it under the new Reference pack type.
 - Video generation progress: with an upstream adapter reporting the optional `progress`/`progress_detail` polling fields (H3 adapter), a generating canvas video node should show the reported percentage with a thin progress bar, the current stage text (queued/preparing/generating/decoding/encoding), estimated remaining time when present, and the sampling step count (e.g. 3/8) when the adapter reports it, updating every poll cycle; the video workbench pending card should show the same stage and percentage. On task completion or failure the bar should disappear. When the upstream omits progress fields (e.g. `--no-progress`, or a relay without progress support), generation should behave exactly as before — spinner and "Generating" text only — with no errors, and progress must not break the refresh-resume polling flow for OpenAI-format task IDs.
+- Local proxy: the Settings modal should offer a **Local proxy** tab with a switch, the `npx @basketikun/canvas-proxy` command, a proxy address field defaulting to `127.0.0.1:23210`, and a connection test that reports the proxy version. With it on, model lists, image, video, text, audio, media downloads, and WebDAV sync and test requests should all go out through the local proxy; with it off every request must go directly as before, and the proxy address must never be written into the provider or WebDAV fields.
+- Local WebP thumbnails: canvas image nodes, the left element list, the node reference bar, My Assets cards, image history, the asset picker, and the video workbench should render downscaled WebP thumbnails (long edge 768) instead of decoding originals. Zooming a node past the thumbnail's pixel budget should fall back to the original, while preview, download, export, and generation references must keep using the original. Thumbnails live only in the local `image_previews` IndexedDB store — they must not appear in node data, exports, or WebDAV sync, and deleting an image or project should clean them up.
+- Image resolution and aspect ratio: the image settings panel should separate resolution (1k / 2k / 4k / auto) from aspect ratio and fill W/H from the fixed table below; video settings should use 480p / 720p / 1080p with 1:1, 3:4, 4:3, 16:9, 9:16, 21:9, or auto and compute the pixel size from that pair, with duration as a 4–30 second slider. MiniMax H3 channels keep their own 768P / 2K, adaptive ratio, 4–15 second duration, and sampling-step field.
+- Drag performance: dragging a node should batch the group drop-target detection and position update into one frame, and connections should be culled by the viewport. With many nodes and connections on a canvas, dragging, zooming, and panning should stay smooth and connections must not disappear while inside the viewport.
+- Image request timeout: image generation, image editing, and Gemini image requests should time out after 10 minutes and report a timeout message instead of staying in the generating state forever; the `response_format=url` retry path must share the same timeout.
+- Hover-only node actions: download, duplicate, set-primary-image, and set-primary-text buttons on image and text nodes should stay hidden until the pointer enters the node, and hovering must still reveal them.
 
 The Chinese version contains the complete item-by-item acceptance checklist.
 
-## 图片分辨率尺寸表
+## Image resolution size table
 
-选择分辨率和宽高比后，W/H 按下表填写，单位为像素。预设尺寸不受「16 倍数对齐」开关影响；该开关只控制手动输入尺寸时的对齐。最终生成尺寸以所选模型的实际输出为准。
+After picking a resolution and an aspect ratio, W/H are filled from the table below, in pixels. Preset sizes ignore the "align to multiples of 16" switch, which only rounds manual W/H input. The final generated size still depends on the model.
 
-| 宽高比 | 1K | 2K | 4K |
+| Aspect ratio | 1K | 2K | 4K |
 | --- | ---: | ---: | ---: |
 | **1:1** | **1024 × 1024** | **2048 × 2048** | **2880 × 2880** |
 | **2:3** | 1024 × 1536 | 1360 × 2048 | 2336 × 3520 |
@@ -74,9 +80,9 @@ The Chinese version contains the complete item-by-item acceptance checklist.
 | **21:9** | 2016 × 864 | 2688 × 1152 | **3840 × 1648** |
 | **9:21** | 864 × 2016 | 1152 × 2688 | **1648 × 3840** |
 
-待验收：
+To verify:
 
-- 在画布和图像工作台逐项切换 3 档分辨率与 9 种比例，W/H 应与表格一致，重新打开设置后仍选中正确档位；重点检查 1K 的 2:3、16:9、21:9 及对应竖图，以及 4K 的 1:1。
-- 所有 4K 预设提交时均不应触发本地总像素或最长边限制；生成和编辑请求、调用脚本应收到所选像素尺寸。
-- 分辨率为自动时保留比例选择，比例为自动时禁用 W/H；手动输入 W/H 后，对齐开关仍应按原有方式工作。
-- Gemini 在质量为自动时，应将表中尺寸识别为对应的 1K / 2K / 4K；显式选择质量时维持原有优先级。视频尺寸设置应保持原有行为。
+- Switching each of the three resolutions against the nine ratios on the canvas and in the image workbench should match the table and stay selected after reopening the settings; check 1K at 2:3, 16:9, and 21:9 with their portrait counterparts, plus 4K at 1:1.
+- Every 4K preset must pass the local pixel-count and longest-edge limits; generation and edit requests and request scripts should receive the selected pixel size.
+- With resolution set to auto the ratio stays selectable, and with ratio set to auto W/H are disabled; manual W/H input should still follow the align switch.
+- With Gemini quality set to auto the table sizes should be recognized as their 1K / 2K / 4K tier, while an explicit quality keeps its current priority. Video settings should keep their own behavior.
