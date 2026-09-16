@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { dataUrlToFile } from "@/lib/image-utils";
-import { clampVideoSeconds, computeVideoSize, inferVideoRatio } from "@/lib/media-size";
+import { clampVideoSeconds } from "@/lib/media-size";
 import { buildMinimaxVideoPayload, isMinimaxVideoConfig, minimaxVideoReferenceError, MINIMAX_REFERENCE_LIMITS } from "@/lib/minimax-video";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
@@ -12,11 +12,30 @@ import { runModelPlugin } from "./model-plugin";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
-type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null; progress?: number; progress_detail?: VideoProgressDetail | null };
+type VideoResponse = {
+    id: string;
+    status?: string;
+    error?: { message?: string };
+    url?: string;
+    result_url?: string;
+    video_url?: string;
+    content?: { video_url?: string; url?: string } | null;
+    progress?: number;
+    progress_detail?: VideoProgressDetail | null;
+};
 type ApiVideoResponse = VideoResponse | { code?: number | string; data?: VideoResponse | null; msg?: string; message?: string; error?: { message?: string } };
 type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: string; message?: string; error?: { message?: string } };
 type MinimaxTask = { task_id?: string; id?: string };
-type MinimaxTaskState = { task?: { id?: string; status?: "queued" | "running" | "succeeded" | "failed" | "cancelled"; error?: { code?: string; message?: string } | null; content?: { url?: string } | null; progress?: number; progress_detail?: VideoProgressDetail | null } | null };
+type MinimaxTaskState = {
+    task?: {
+        id?: string;
+        status?: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+        error?: { code?: string; message?: string } | null;
+        content?: { url?: string } | null;
+        progress?: number;
+        progress_detail?: VideoProgressDetail | null;
+    } | null;
+};
 type RequestOptions = { signal?: AbortSignal };
 type WaitOptions = RequestOptions & { onProgress?: (progress?: VideoGenerationProgress) => void };
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
@@ -109,10 +128,10 @@ async function createPluginVideoTask(config: AiConfig, model: string, script: st
             prompt,
             images: refs,
             params: {
-                seconds: normalizeVideoSeconds(config.videoSeconds),
-                size: normalizeVideoSize(config.size, config.vquality),
+                seconds: clampVideoSeconds(config.videoSeconds),
+                size: normalizeVideoSize(config.size),
                 resolution: normalizeVideoResolution(config.vquality),
-                ratio: videoAspectRatio(config.size),
+                ratio: config.size,
                 generateAudio: boolConfig(config.videoGenerateAudio, true),
                 watermark: boolConfig(config.videoWatermark, false),
             },
@@ -152,8 +171,8 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     const body = new FormData();
     body.append("model", modelOptionName(model));
     body.append("prompt", prompt);
-    body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
-    body.append("size", normalizeVideoSize(config.size, config.vquality) || "1280x720");
+    body.append("seconds", clampVideoSeconds(config.videoSeconds));
+    if (normalizeVideoSize(config.size)) body.append("size", normalizeVideoSize(config.size)!);
     body.append("resolution_name", normalizeVideoResolution(config.vquality));
     body.append("preset", "normal");
     const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
@@ -193,7 +212,17 @@ async function createMinimaxTask(config: AiConfig, model: string, prompt: string
     const videoUrls = await Promise.all(videoReferences.slice(0, MINIMAX_REFERENCE_LIMITS.videos).map((video) => resolveMinimaxVideoUrl(video)));
     const audioUrls = await Promise.all(audioReferences.slice(0, MINIMAX_REFERENCE_LIMITS.audios).map((audio) => resolveMinimaxAudioUrl(audio)));
     if (!prompt.trim() && !imageUrls.length && !videoUrls.length && !audioUrls.length) throw new Error(apiText("videoPromptRequired"));
-    const payload = buildMinimaxVideoPayload({ model: modelOptionName(model), prompt, imageUrls, videoUrls, audioUrls, ratio: config.size, resolution: config.vquality, duration: config.videoSeconds, steps: normalizeVideoSteps(config.videoSteps) ?? undefined });
+    const payload = buildMinimaxVideoPayload({
+        model: modelOptionName(model),
+        prompt,
+        imageUrls,
+        videoUrls,
+        audioUrls,
+        ratio: config.size,
+        resolution: config.vquality,
+        duration: config.videoSeconds,
+        steps: normalizeVideoSteps(config.videoSteps) ?? undefined,
+    });
 
     try {
         const created = unwrapMinimaxResponse((await axios.post<ApiEnvelope<MinimaxTask>>(minimaxApiUrl(config, "/v2/video_generation"), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
@@ -288,26 +317,16 @@ function assertVideoConfig(config: AiConfig, model: string) {
     if (config.apiFormat === "gemini") throw new Error(apiText("geminiVideoUnsupported"));
 }
 
-function videoAspectRatio(size: string) {
-    const ratio = inferVideoRatio(size);
-    return ratio === "auto" ? "16:9" : ratio;
-}
-
-function normalizeVideoSeconds(value: string) {
-    return clampVideoSeconds(value);
-}
-
 function normalizeVideoSteps(value: string) {
     const steps = Math.floor(Number(value));
     return Number.isFinite(steps) && steps > 0 ? Math.min(60, steps) : null;
 }
 
-function normalizeVideoSize(value: string, resolution?: string) {
+function normalizeVideoSize(value: string) {
     if (value === "auto") return null;
-    if (/^\d+x\d+$/.test(value || "")) return value;
-    const ratio = inferVideoRatio(value || "16:9");
-    if (ratio === "auto") return null;
-    return computeVideoSize(resolution || "720", ratio);
+    const size = value || "1280x720";
+    if (/^\d+x\d+$/.test(size)) return size;
+    return ["9:16", "2:3", "3:4"].includes(size) ? "720x1280" : "1280x720";
 }
 
 function normalizeVideoResolution(value: string) {
@@ -355,17 +374,8 @@ function readApiErrorMessage(value: unknown): string {
     if (typeof value !== "object") return "";
     const payload = value as { msg?: unknown; message?: unknown; error?: unknown; detail?: unknown };
     // error may be a string or an object containing a message.
-    const errorMsg =
-        typeof payload.error === "string"
-            ? payload.error
-            : (payload.error as { message?: unknown })?.message;
-    return (
-        readApiErrorMessage(payload.msg) ||
-        readApiErrorMessage(payload.message) ||
-        readApiErrorMessage(errorMsg) ||
-        readApiErrorMessage(payload.detail) ||
-        ""
-    );
+    const errorMsg = typeof payload.error === "string" ? payload.error : (payload.error as { message?: unknown })?.message;
+    return readApiErrorMessage(payload.msg) || readApiErrorMessage(payload.message) || readApiErrorMessage(errorMsg) || readApiErrorMessage(payload.detail) || "";
 }
 
 function readAxiosError(error: unknown, fallback: string) {
