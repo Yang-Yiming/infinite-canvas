@@ -173,7 +173,9 @@ export function CanvasScriptConsole({ projectId }: { projectId: string }) {
                     writeEntries([]);
                     continue;
                 }
-                writeEntries(readEntries().map((item) => (item.id === entry.id ? { ...item, status: result.status, nodeIds: result.nodeIds, error: result.error, output: result.output } : item)));
+                writeEntries(readEntries().map((item) => (item.id === entry.id ? { ...item, status: result.settled ? "running" : result.status, nodeIds: result.nodeIds, error: result.error, output: result.output } : item)));
+                // Generation keeps running in the background; finalize the entry once its output node settles.
+                void result.settled?.then((error) => writeEntries(readEntries().map((item) => (item.id === entry.id ? { ...item, status: error ? "error" : "success", error } : item))));
             }
         },
         [readEntries, writeEntries],
@@ -203,6 +205,8 @@ export function CanvasScriptConsole({ projectId }: { projectId: string }) {
                 if (entry.status !== "running") return entry;
                 const generated = entry.nodeIds.map((id) => nodes.get(id));
                 if (!entry.nodeIds.length || generated.some((node) => !node)) return { ...entry, status: "error", error: i18n.t("canvas.generation.interrupted") };
+                // Still generating (console was just reopened): leave it for the live `settled` update.
+                if (generated.some((node) => node!.metadata?.status === "loading")) return entry;
                 if (generated.every((node) => node!.metadata?.status === "success" && node!.metadata?.content)) return { ...entry, status: "success" };
                 return { ...entry, status: "error", error: i18n.t("canvas.generation.interrupted") };
             }),

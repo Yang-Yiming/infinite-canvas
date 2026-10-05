@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type MutableR
 import i18n from "@/i18n";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { applyCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import { emitCanvasEvent } from "@/lib/canvas/canvas-event-bus";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 import type { CanvasConnection, CanvasNodeData, ContextMenuState, ViewportTransform } from "@/types/canvas";
 
@@ -65,7 +66,8 @@ export function useAgentBridge(params: AgentBridgeParams) {
                     generationOps.forEach((op) => {
                         const target = nodesRef.current.find((node) => node.id === op.nodeId);
                         const prompt = op.prompt?.trim() ? op.prompt : (target?.metadata?.composerContent ?? target?.metadata?.prompt ?? "");
-                        void generateNodeRef.current?.(op.nodeId, op.mode || target?.metadata?.generationMode || "image", prompt);
+                        // Some early returns (config missing, canceled, empty prompt) never set a node status, so announce when the run ends.
+                        void Promise.resolve(generateNodeRef.current?.(op.nodeId, op.mode || target?.metadata?.generationMode || "image", prompt)).finally(() => emitCanvasEvent("generation:settled", op.nodeId));
                     }),
                 );
             }

@@ -1151,7 +1151,7 @@ function InfiniteCanvasPage() {
 
     useEffect(() => {
         const handleShortcut = (event: KeyboardEvent) => {
-            if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== "j") return;
+            if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "j") return;
             event.preventDefault();
             toggleScriptConsole();
         };

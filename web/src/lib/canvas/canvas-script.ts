@@ -2,7 +2,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
-import { emitCanvasEvent } from "@/lib/canvas/canvas-event-bus";
+import { emitCanvasEvent, onCanvasEvent } from "@/lib/canvas/canvas-event-bus";
 import { fitNodeSize } from "@/lib/canvas/canvas-node-size";
 import { parseScriptLine, SCRIPT_FUNCTIONS, ScriptParseError, type ScriptExpr, type ScriptFunction, type ScriptStatement } from "@/lib/canvas/canvas-script-parser";
 import { buildNodeMentionReferences, getGenerationResourceNodes } from "@/lib/canvas/canvas-resource-references";
@@ -43,6 +43,8 @@ export type ScriptRunResult = {
     errorAt?: number;
     output?: string;
     clearHistory?: boolean;
+    // Present for generation statements: resolves with an error message, or undefined once the output node succeeds.
+    settled?: Promise<string | undefined>;
 };
 
 export class CanvasScriptError extends Error {
@@ -504,7 +506,7 @@ function compileGeneration(input: ScriptGenerationInput): ScriptCompileResult {
     });
 
     const outputId = nanoid();
-    const markers: { key: string; value: ScriptValue }[] = [];
+    const markers: { key: string; token: string; value: ScriptValue }[] = [];
     const parts = promptParts.map((part) =>
         part.replace(/\{([^{}]*)\}/g, (match, raw: string) => {
             const token = raw.trim();
@@ -514,7 +516,7 @@ function compileGeneration(input: ScriptGenerationInput): ScriptCompileResult {
             if (value.kind !== "node" && value.kind !== "asset") return fail("invalidInterpolation", { name: token });
             if (value.kind === "asset" && value.asset.kind === "skill") return fail("invalidInterpolation", { name: token });
             const key = `\u0000${markers.length}\u0000`;
-            markers.push({ key, value });
+            markers.push({ key, token, value });
             return key;
         }),
     );
@@ -544,7 +546,7 @@ function compileGeneration(input: ScriptGenerationInput): ScriptCompileResult {
         const labels = new Map(buildNodeMentionReferences(node, [...nodes, node], connections).map((reference) => [reference.id, reference.label]));
         markers.forEach((marker) => {
             const label = labels.get(nodeForValue(marker.value).id);
-            if (!label) return fail("invalidInterpolation", { name: marker.key });
+            if (!label) return fail("invalidInterpolation", { name: marker.token });
             prompt = prompt.split(marker.key).join(label);
         });
     }
@@ -772,21 +774,34 @@ type PendingRecord = { promise: Promise<void>; failure?: string };
 const pending = new Map<string, PendingRecord>();
 
 function trackPending(nodeId: string) {
-    if (pending.has(nodeId)) return;
+    const existing = pending.get(nodeId);
+    if (existing) return existing;
     let settle!: () => void;
     const record: PendingRecord = { promise: new Promise<void>((resolve) => (settle = resolve)) };
     pending.set(nodeId, record);
-    const unsubscribe = useAgentStore.subscribe((state) => {
-        const node = state.canvasContext?.snapshot.nodes.find((item) => item.id === nodeId);
-        if (node) {
-            const status = node.metadata?.status;
-            if (status !== "success" && status !== "error") return;
-            if (status === "error") record.failure = node.metadata?.alias || node.title;
+    let runEnded = false;
+    const check = () => {
+        const node = useAgentStore.getState().canvasContext?.snapshot.nodes.find((item) => item.id === nodeId);
+        const status = node?.metadata?.status;
+        // A missing node was deleted: nothing left to wait for.
+        if (node && status !== "success" && status !== "error") {
+            // Early returns in handleGenerateNode leave no status; once the run ended, anything but loading is a failure.
+            if (!runEnded || status === "loading") return;
+            record.failure = node.metadata?.alias || node.title;
         }
+        if (status === "error") record.failure = node?.metadata?.alias || node?.title;
         pending.delete(nodeId);
         unsubscribe();
+        offSettled();
         settle();
+    };
+    const unsubscribe = useAgentStore.subscribe(check);
+    const offSettled = onCanvasEvent("generation:settled", (payload) => {
+        if (payload !== nodeId) return;
+        runEnded = true;
+        check();
     });
+    return record;
 }
 
 export function waitForNodes(ids: string[]): Promise<void> {
@@ -907,9 +922,10 @@ export async function runScriptLine(source: string): Promise<ScriptRunResult> {
         if (!context) return failure(new CanvasScriptError("noCanvas"));
         context.applyOps(compiled.ops);
     }
-    if (compiled.outputNodeId) trackPending(compiled.outputNodeId);
+    const record = compiled.outputNodeId ? trackPending(compiled.outputNodeId) : null;
     if (compiled.focusNodeId) emitCanvasEvent("script:focus", compiled.focusNodeId);
-    return { status: "success", nodeIds: compiled.nodeIds, output: compiled.output };
+    const settled = record?.promise.then(() => (record.failure ? i18n.t("canvas.projectPage.generationFailed") : undefined));
+    return { status: "success", nodeIds: compiled.nodeIds, output: compiled.output, settled };
 }
 
 function failure(error: unknown): ScriptRunResult {
