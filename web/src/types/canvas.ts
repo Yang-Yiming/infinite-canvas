@@ -87,7 +87,19 @@ export type CanvasNodeMetadata = {
     // Latest video generation progress reported by polling (H3 adapter `progress`/`progress_detail`); absent when upstream has none.
     videoProgress?: { percent?: number; stage?: string; etaSeconds?: number; step?: number; steps?: number };
     groupId?: string;
+    alias?: string; // Script console variable name, unique within a project.
+    script?: string; // Script line that generated this node, used by `name!` rerun.
     interactive?: boolean; // Plugin node interaction/move state; see CanvasNodeDefinition.interactionToggle.
+};
+
+export type CanvasScriptEntry = {
+    id: string;
+    source: string;
+    nodeIds: string[];
+    status: "running" | "success" | "error";
+    error?: string;
+    output?: string;
+    createdAt: string;
 };
 
 export type CanvasNodeData = {

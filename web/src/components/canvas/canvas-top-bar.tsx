@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, Bot, Download, Home, Images, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, Trash2, Undo2, Upload } from "lucide-react";
+import { BookOpen, Bot, Download, Home, Images, Menu, PanelLeftClose, PanelLeftOpen, Plus, Redo2, SquareTerminal, Trash2, Undo2, Upload } from "lucide-react";
 import { Button, Dropdown, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
@@ -31,6 +31,8 @@ export function CanvasTopBar({
     agentOpen,
     compactAgentStatus,
     onToggleAgent,
+    scriptOpen,
+    onToggleScript,
 }: {
     title: string;
     titleDraft: string;
@@ -53,6 +55,8 @@ export function CanvasTopBar({
     agentOpen: boolean;
     compactAgentStatus: { connected: boolean; enabled: boolean; activity: string };
     onToggleAgent: () => void;
+    scriptOpen: boolean;
+    onToggleScript: () => void;
 }) {
     const colorTheme = useThemeStore((state) => state.theme);
     const { t } = useTranslation();
@@ -84,6 +88,17 @@ export function CanvasTopBar({
                             style={{ color: theme.node.text }}
                         >
                             {sidePanelOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}
+                        </button>
+                    </Tooltip>
+                    <Tooltip title={t("canvas.script.title")}>
+                        <button
+                            type="button"
+                            onClick={onToggleScript}
+                            aria-label={t("canvas.script.title")}
+                            className="grid size-7 place-items-center rounded-full transition hover:bg-black/5 dark:hover:bg-white/10"
+                            style={{ color: scriptOpen ? theme.node.text : theme.node.muted }}
+                        >
+                            <SquareTerminal className="size-4" />
                         </button>
                     </Tooltip>
                     <Dropdown

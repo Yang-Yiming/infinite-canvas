@@ -145,6 +145,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const hasVideoContent = data.type === CanvasNodeType.Video && Boolean(data.metadata?.content);
     const hasAudioContent = data.type === CanvasNodeType.Audio && Boolean(data.metadata?.content);
     const isGroup = data.type === CanvasNodeType.Group;
+    const hasAlias = Boolean(data.metadata?.alias);
     const batchCount = data.type === CanvasNodeType.Image ? data.metadata?.images?.length || 0 : data.type === CanvasNodeType.Text ? data.metadata?.texts?.length || 0 : 0;
     const isBatchRoot = batchCount > 1;
     // Nodes with the interaction/move toggle ignore content pointer events in move mode and allow interaction in interactive mode.
@@ -325,7 +326,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 else onContextMenu(event, data.id);
             }}
         >
-            {!referenceSelectionState && (isSelected || hovered || isEditingTitle) && (
+            {!referenceSelectionState && (isSelected || hovered || isEditingTitle || hasAlias) && (
                 <div className="absolute left-3 top-[-28px] z-[65] max-w-[calc(100%-24px)]" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
                     {isEditingTitle ? (
                         <input
@@ -345,18 +346,25 @@ export const CanvasNode = React.memo(function CanvasNode({
                             }}
                         />
                     ) : (
-                        <button
-                            type="button"
-                            className="block max-w-full truncate border-b border-dashed border-transparent px-0 py-0.5 text-left text-xs font-medium opacity-75 transition hover:border-current hover:opacity-100"
-                            style={{ color: theme.node.text }}
-                            title={t("canvas.node.renameHint")}
-                            onDoubleClick={(event) => {
-                                event.stopPropagation();
-                                setIsEditingTitle(true);
-                            }}
-                        >
-                            {data.title || t("canvas.node.untitled")}
-                        </button>
+                        <div className="flex max-w-full items-center gap-1.5">
+                            <button
+                                type="button"
+                                className="min-w-0 truncate border-b border-dashed border-transparent px-0 py-0.5 text-left text-xs font-medium opacity-75 transition hover:border-current hover:opacity-100"
+                                style={{ color: theme.node.text }}
+                                title={t("canvas.node.renameHint")}
+                                onDoubleClick={(event) => {
+                                    event.stopPropagation();
+                                    setIsEditingTitle(true);
+                                }}
+                            >
+                                {data.title || t("canvas.node.untitled")}
+                            </button>
+                            {hasAlias ? (
+                                <span className="shrink-0 font-mono text-[10px] opacity-70" style={{ color: theme.node.muted }} title={t("canvas.script.aliasBadge")}>
+                                    ${data.metadata?.alias}
+                                </span>
+                            ) : null}
+                        </div>
                     )}
                 </div>
             )}

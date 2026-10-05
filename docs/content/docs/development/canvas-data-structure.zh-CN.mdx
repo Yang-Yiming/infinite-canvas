@@ -34,6 +34,7 @@ type CanvasProject = {
   activeChatId: string | null;
   backgroundMode: "lines" | "dots" | "blank";
   viewport: { x: number; y: number; k: number };
+  script: CanvasScriptEntry[];
 };
 ```
 
@@ -48,6 +49,7 @@ type CanvasProject = {
 - `activeChatId`：当前选中的助手会话 ID。
 - `backgroundMode`：画布背景模式。
 - `viewport`：视口变换，`x/y` 是屏幕平移，`k` 是缩放比例。
+- `script`：脚本控制台的执行历史，见「脚本控制台数据」。
 
 ## 节点结构
 
@@ -109,6 +111,8 @@ type CanvasNodeMetadata = {
   mimeType?: string;
   bytes?: number;
   videoTaskId?: string;
+  alias?: string;
+  script?: string;
 };
 ```
 
@@ -119,6 +123,30 @@ type CanvasNodeMetadata = {
 - 文本节点：`content` 保存文本内容；`fontSize` 保存字体大小；`prompt/status/errorDetails` 保存生成状态。
 - 生成配置节点：`generationMode/model/size/count/inputOrder` 保存生成配置；`generationMode` 可选择文本、图片或视频；上游输入通过 `connections` 计算。
 - 多图图片节点：批量生成仍只保存为一个图片节点，请求开始前会在 `images` 中创建全部图片槽位，每个槽位通过 `status/errorDetails` 独立记录实时状态，成功后补充图片数据；最先成功的槽位会立即写入 `primaryImageId`，并由节点级 `content` 和图片元数据展示；展开状态仅属于当前界面，不写入项目数据。
+- 脚本变量：`alias` 是脚本控制台给节点起的变量名，同一画布内唯一，脚本删除节点即变量失效；`script` 记录生成该节点的原始语句，仅用于 `name!` 重跑。两者都只由脚本控制台读写，手动改节点不影响其他数据。
+
+## 脚本控制台数据
+
+脚本控制台不维护额外状态，变量就是节点的 `metadata.alias`，历史记录保存在画布项目里：
+
+```ts
+type CanvasScriptEntry = {
+  id: string;
+  source: string;
+  nodeIds: string[];
+  status: "running" | "success" | "error";
+  error?: string;
+  output?: string;
+  createdAt: string;
+};
+```
+
+- `source`：原始语句，点击历史条目会填回输入框。
+- `nodeIds`：本句产出或绑定的节点，用于展示缩略图和在刷新后重新判断状态。
+- `status` / `error` / `output`：执行状态、失败原因、`:ls` 与 `:help` 的文本输出。
+- `createdAt`：ISO 字符串。
+
+执行中的生成只存在于内存（`pending`），不写入项目数据；页面刷新后，历史里仍是 `running` 的条目会按 `nodeIds` 对应节点的实际状态重新判定为成功或失败。
 
 ## 连线结构
 

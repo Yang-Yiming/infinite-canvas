@@ -244,7 +244,14 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onPreviewNode, th
                                             {isImage ? <img src={previewUrlFor(node.metadata?.storageKey) || node.metadata?.content} alt={node.title} className="size-full object-cover" /> : <Icon className="size-5 opacity-60" />}
                                         </span>
                                         <span className="min-w-0 flex-1 space-y-0.5">
-                                            <span className="block truncate text-sm font-medium leading-snug">{node.title || getNodeDefinition(node.type)?.title || t("canvas.node.untitled")}</span>
+                                            <span className="flex min-w-0 items-center gap-1.5">
+                                                <span className="truncate text-sm font-medium leading-snug">{node.title || getNodeDefinition(node.type)?.title || t("canvas.node.untitled")}</span>
+                                                {node.metadata?.alias ? (
+                                                    <span className="shrink-0 font-mono text-[10px] opacity-55" title={t("canvas.script.aliasBadge")}>
+                                                        ${node.metadata.alias}
+                                                    </span>
+                                                ) : null}
+                                            </span>
                                             <span className="block truncate text-xs leading-snug opacity-50">{nodePreviewText(node)}</span>
                                         </span>
                                         {node.metadata?.status && node.metadata.status !== "idle" ? <span className="size-1.5 shrink-0 rounded-full" style={{ background: STATUS_COLOR[node.metadata.status] || "transparent" }} /> : null}

@@ -1,0 +1,46 @@
+---
+title: Canvas Script Console Plan
+description: Drive the node graph with keyboard statements instead of dragging connections
+---
+
+# Canvas Script Console
+
+The Chinese version ([画布脚本控制台规划](/zh-CN/docs/progress/canvas-script-console-plan)) is the authoritative spec, including the full kwargs table, completion rules, file list, and acceptance cases. This page summarizes it.
+
+## Principles
+
+1. The node graph is the single source of truth. A variable is a node's `metadata.alias`; the script keeps no shadow state.
+2. Each statement compiles to `CanvasAgentOp[]` and runs through `useAgentStore.getState().canvasContext.applyOps`, the same channel the local Agent uses. Generation reuses `run_generation` → `handleGenerateNode`, which is not modified: it already generates in place into an empty node of the matching type and reads incoming connections as references.
+3. Keyboard first: `@` references, variables, functions, and parameters all autocomplete, and new nodes are laid out automatically.
+
+## Syntax
+
+```python
+girl  = @CharacterA.png          # bind an existing node or asset; @"with spaces", @#nodeId
+style = "cyberpunk, neon, 35mm"  # Text node (updated in place on reassignment)
+cast  = [girl, bgm]              # Reference pack (rewired in place on reassignment)
+p     = txt(cast, "Describe {girl} dancing", skill=@StoryboardSkill)
+shot  = img(girl, p, style, size="2:3", n=2)
+clip  = vid(shot, "slow push-in", seconds=5)
+img(girl, "red jacket")          # auto-named img1, img2, ...
+shot!                            # rerun shot's original statement with current variable values
+:ls  :focus x  :mv a b  :unname x  :rm x  :undo  :clear  :help
+```
+
+- Positional nodes, lists, and assets become input connections. Positional strings are joined into the prompt. `{name}` inlines text content, or the reference label (for example "Image 1") for media nodes.
+- Keyword arguments map directly to output node metadata (`model`, `skill→skillId`, `size`, `n→count/textCount`, `seconds`, `voice→audioVoice`, ...). `buildGenerationConfig` already prefers node metadata. Unknown keywords are errors.
+- A generation always creates a new output node. If the alias already exists, the old node is renamed `name_1`, `name_2`, and so on.
+- Statements return immediately. A statement that references a pending or loading node waits for it first (an in-memory `pending` map plus `waitForNodes` subscribed to the agent store).
+- The parser is a small hand-written tokenizer plus recursive descent parser in `lib/canvas/canvas-script-parser.ts`.
+
+## UI and linking
+
+- Bottom drawer toggled with `Cmd/Ctrl + J`. It shows a history list and a CodeMirror input (`@uiw/react-codemirror` plus `@codemirror/autocomplete`). It follows the canvas theme.
+- `$alias` badges appear on nodes and in the side panel list. `script:focus` and `script:insert` canvas events link the console and the canvas. `Alt + click` on a node inserts its alias into the console.
+- Data changes: `CanvasNodeMetadata.alias`, `CanvasNodeMetadata.script`, and `CanvasProject.script: CanvasScriptEntry[]`.
+
+## Phases
+
+1. MVP: parser, binding, strings, lists, `txt`/`img`, interpolation, rerun, commands, console with `@`/variable completion, badges, persisted history.
+2. `vid`/`aud`, kwarg and value completion, hover previews, `Alt + click` and context menu insertion, highlighting.
+3. Optional: export a selected subgraph as a script; parameterized snippets.

@@ -23,10 +23,11 @@ type CanvasProject = {
   activeChatId: string | null;
   backgroundMode: "lines" | "dots" | "blank";
   viewport: { x: number; y: number; k: number };
+  script: CanvasScriptEntry[];
 };
 ```
 
-The viewport stores screen translation in `x` and `y`, and scale in `k`.
+The viewport stores screen translation in `x` and `y`, and scale in `k`. `script` is the script console history described under Script console data.
 
 ## Nodes and edges
 
@@ -51,6 +52,31 @@ type CanvasConnection = {
 Node positions and sizes use canvas-world coordinates. Edges store only node IDs; their paths are calculated while rendering. Deleting a node removes its connected edges.
 
 Common metadata includes content, prompt, status, generation mode, model, size, count, natural dimensions, image results, input order, `storageKey`, MIME type, byte size, and for in-progress OpenAI-style videos a `videoTaskId` used to resume status polling after refresh. A multi-image generation remains one image node: `images` creates all requested slots before generation starts and records each slot's `status`, `errorDetails`, and completed image data. `primaryImageId` selects the result mirrored by the node-level `content` and image metadata; the first successful slot becomes primary immediately. Persisted image and video `content` values are normally session-scoped `blob:` URLs, with `storageKey` as the persistent identity. If CORS prevents reading an otherwise displayable image, `content` may remain a potentially expiring remote URL and `storageKey` is omitted.
+
+Two metadata fields belong to the script console: `alias` is the variable name assigned to the node and must be unique within a canvas, and `script` keeps the statement that generated the node so `name!` can rerun it. Nothing else reads or writes them, and deleting the node invalidates the variable.
+
+## Script console data
+
+The console keeps no state of its own: variables are node `metadata.alias` values, and only the execution history is persisted on the project.
+
+```ts
+type CanvasScriptEntry = {
+  id: string;
+  source: string;
+  nodeIds: string[];
+  status: "running" | "success" | "error";
+  error?: string;
+  output?: string;
+  createdAt: string;
+};
+```
+
+- `source`: the original statement, refilled into the editor when the entry is clicked.
+- `nodeIds`: nodes produced or bound by that statement, used for thumbnails and for re-judging status after a reload.
+- `status` / `error` / `output`: execution state, failure reason, and the text printed by `:ls` and `:help`.
+- `createdAt`: ISO string.
+
+In-flight generations live in memory only (a `pending` map) and are never written to the project. After a reload, entries still marked `running` are re-judged from the current status of their `nodeIds`.
 
 ## Assistant sessions
 

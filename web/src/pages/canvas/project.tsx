@@ -42,9 +42,13 @@ import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "@/componen
 import { CanvasToolbar } from "@/components/canvas/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { CanvasSidePanel } from "@/components/canvas/canvas-side-panel";
+import { CanvasScriptConsole } from "@/components/canvas/canvas-script-console";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { useCanvasScriptStore } from "@/stores/canvas/use-canvas-script-store";
+import { autoAliasForNode } from "@/lib/canvas/canvas-script";
+import { onCanvasEvent } from "@/lib/canvas/canvas-event-bus";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { buildNodeMentionReferences, getGroupResourceNodes, isCanvasReferenceNode, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -1125,6 +1129,49 @@ function InfiniteCanvasPage() {
 
     useEffect(() => () => void (focusAnimRef.current && cancelAnimationFrame(focusAnimRef.current)), []);
 
+    const scriptOpen = useCanvasScriptStore((state) => state.open);
+    const toggleScriptConsole = useCanvasScriptStore((state) => state.toggleConsole);
+    const openScriptConsole = useCanvasScriptStore((state) => state.openConsole);
+    const insertIntoScript = useCanvasScriptStore((state) => state.insertIntoConsole);
+    const setScriptCanvasSize = useCanvasScriptStore((state) => state.setCanvasSize);
+
+    // The console places new nodes around the visible canvas center, so it needs the live canvas area size.
+    useEffect(() => {
+        setScriptCanvasSize(size);
+    }, [setScriptCanvasSize, size]);
+
+    useEffect(() => {
+        const off = onCanvasEvent("script:focus", (payload) => {
+            if (typeof payload === "string") focusNode(payload);
+        });
+        return () => {
+            off();
+        };
+    }, [focusNode]);
+
+    useEffect(() => {
+        const handleShortcut = (event: KeyboardEvent) => {
+            if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== "j") return;
+            event.preventDefault();
+            toggleScriptConsole();
+        };
+        window.addEventListener("keydown", handleShortcut);
+        return () => window.removeEventListener("keydown", handleShortcut);
+    }, [toggleScriptConsole]);
+
+    // `Alt + 点击` and the node context menu name the node if needed, then queue it into the console.
+    const insertNodeIntoScript = useCallback(
+        (nodeId: string) => {
+            const node = nodesRef.current.find((item) => item.id === nodeId);
+            if (!node) return;
+            const alias = node.metadata?.alias || autoAliasForNode(node, nodesRef.current);
+            if (!node.metadata?.alias) setNodes((prev) => prev.map((item) => (item.id === nodeId ? { ...item, metadata: { ...item.metadata, alias } } : item)));
+            openScriptConsole();
+            insertIntoScript(alias);
+        },
+        [insertIntoScript, openScriptConsole],
+    );
+
     const setZoomScale = useCallback(
         (scale: number) => {
             const nextScale = Math.min(Math.max(scale, 0.05), 5);
@@ -1267,6 +1314,12 @@ function InfiniteCanvasPage() {
 
     const handleNodeMouseDown = useCallback((event: ReactMouseEvent, nodeId: string) => {
         event.stopPropagation();
+        if (event.altKey) {
+            event.preventDefault();
+            pendingSelectionRef.current = null;
+            insertNodeIntoScript(nodeId);
+            return;
+        }
         // Capture already selected the node; this only starts dragging, with a fallback selection if capture did not run.
         const currentNodes = nodesRef.current;
         const nextSelected = pendingSelectionRef.current ?? selectNodeByEvent(event, nodeId).nextSelected;
@@ -1292,7 +1345,7 @@ function InfiniteCanvasPage() {
         historyPausedRef.current = true;
         nodeDraggingRef.current = true;
         setIsNodeDragging(true);
-    }, []);
+    }, [insertNodeIntoScript]);
 
     const finishNodeDrag = useCallback((clientX?: number, clientY?: number) => {
         if (rafRef.current) {
@@ -3132,7 +3185,8 @@ function InfiniteCanvasPage() {
     return (
         <main className="flex h-full min-h-0 overflow-hidden" style={{ background: theme.canvas.background, color: theme.node.text }}>
             <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onPreviewNode={setPreviewNodeId} onInsertAsset={handleAssetInsert} />
-            <section className="relative min-w-0 flex-1 overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                <section className="relative min-w-0 flex-1 overflow-hidden">
                 <CanvasTopBar
                     title={currentProject?.title || t("canvas.projectPage.untitledCanvas")}
                     titleDraft={titleDraft}
@@ -3155,6 +3209,8 @@ function InfiniteCanvasPage() {
                     agentOpen={agentPanelOpen}
                     compactAgentStatus={{ connected: localAgentConnected, enabled: localAgentEnabled, activity: localAgentActivity }}
                     onToggleAgent={toggleAgentPanel}
+                    scriptOpen={scriptOpen}
+                    onToggleScript={toggleScriptConsole}
                 />
 
                 <InfiniteCanvas
@@ -3360,6 +3416,11 @@ function InfiniteCanvasPage() {
                         }}
                         onGroup={groupSelection}
                         onUngroup={ungroupSelection}
+                        onInsertToScript={() => {
+                            if (contextMenu.type !== "node") return;
+                            insertNodeIntoScript(contextMenu.nodeId);
+                            setContextMenu(null);
+                        }}
                         onDelete={() => {
                             if (contextMenu.type === "node") {
                                 deleteNodes(new Set([contextMenu.nodeId]));
@@ -3424,7 +3485,9 @@ function InfiniteCanvasPage() {
                 </Modal>
 
                 <AssetPickerModal open={assetPickerOpen} onInsert={handleAssetInsert} onClose={() => setAssetPickerOpen(false)} />
-            </section>
+                </section>
+                {scriptOpen ? <CanvasScriptConsole projectId={projectId} /> : null}
+            </div>
         </main>
     );
 }

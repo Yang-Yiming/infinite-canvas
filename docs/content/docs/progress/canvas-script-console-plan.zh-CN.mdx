@@ -1,0 +1,258 @@
+---
+title: 画布脚本控制台规划
+description: 用键盘输入类编程语句驱动节点图，减少触摸板拖线操作
+---
+
+# 画布脚本控制台（Canvas Script Console）
+
+## 背景与目标
+
+在触摸板上拖线、摆节点很累。目标是提供一个项目级的「脚本控制台」：一句一句输入语句（类似 Python REPL），每句立即执行，结果直接体现为左侧节点图的变化。
+
+核心原则：
+
+1. **节点图是唯一数据源**。脚本不维护影子状态，变量 = 节点的 `metadata.alias`。删节点即变量失效，画布上手动改动脚本立即可见。
+2. **只编译成现有操作**。每句语句编译为 `CanvasAgentOp[]`，通过 `useAgentStore.getState().canvasContext.applyOps` 执行（与本地 Agent 同一通道），生成复用 `run_generation` → `handleGenerateNode`。**不修改 `handleGenerateNode`**。
+3. **键盘优先**：`@` 选素材、变量名、函数名、参数名全部有自动补全；新节点自动布局，无需拖动。
+
+非目标（本期不做）：循环、条件、自定义函数、多步撤销栈、脚本导出。
+
+## 语法
+
+一行一句，`#` 开头为注释。语句三种：赋值、表达式、命令。
+
+```python
+# 绑定：给已有节点/素材起名（@ 触发补全）
+girl = @角色A.png
+bgm  = @"背景 音乐"            # 带空格的名字用引号
+ref2 = @#node-id              # 补全在标题重名时自动插入 #id 形式
+
+# 数据：文本节点、参考包
+style = "赛博朋克，霓虹夜景，35mm"
+cast  = [girl, ref2, bgm]      # 参考包（Reference 节点）
+
+# 生成：函数名决定输出类型
+p    = txt(cast, "写一段{girl}跳舞的分镜提示词", skill=@分镜技能)
+shot = img(girl, p, style, size="2:3", n=2)
+clip = vid(shot, "镜头缓慢推进", seconds=5)
+vo   = aud("欢迎来到夜之城", voice="alloy")
+
+img(girl, "换成红色外套")      # 不赋值：自动命名 img1、img2…
+
+shot!                          # 用 shot 的原语句重跑一次（产出新节点）
+
+:ls                            # 命令以 : 开头
+```
+
+### 词法
+
+- 标识符：`[\p{L}_][\p{L}\p{N}_]*`（支持中文）。保留字：`txt img vid aud`。
+- 字符串：`"..."`，支持 `\"` `\\` `\n` 转义。
+- 数字：`\d+(\.\d+)?`。
+- 引用：`@ident`、`@"任意文本"`、`@#nodeId`。
+- 符号：`= ( ) [ ] , !`，命令行以 `:` 开头。
+
+### 语法（EBNF）
+
+```text
+line    := comment | command | rerun | assign | expr
+assign  := IDENT "=" expr
+rerun   := IDENT "!"
+command := ":" IDENT { arg }        # arg 为空格分隔的 IDENT/STRING
+expr    := ref | IDENT | STRING | NUMBER | list | call
+list    := "[" [ expr { "," expr } ] "]"
+call    := ("txt"|"img"|"vid"|"aud") "(" [ arg { "," arg } ] ")"
+arg     := IDENT "=" expr | expr
+```
+
+解析器手写（tokenizer + 递归下降，约 150 行），放在 `web/src/lib/canvas/canvas-script-parser.ts`。这是项目自定义 DSL，不是标准格式，通用表达式库（jsep 等）对 `@`、`!`、`:cmd` 需要大量预处理，反而更复杂。解析错误返回 `{ message, from, to }`，用于在编辑器中标红。
+
+## 语义
+
+### 值类型
+
+运行时把表达式求值为以下之一：
+
+| 值 | 来源 | 作为生成参数时 |
+|---|---|---|
+| `node` | 变量名、`@` 引用画布节点 | 连线为生成输入 |
+| `asset` | `@` 引用「我的素材」中的图片/视频/文本 | 先落成画布节点，再按 `node` 处理 |
+| `skill` | `@` 引用技能素材 | 只能用于 `skill=` 参数 |
+| `string` | 字符串字面量 | 拼接进提示词，不建节点 |
+| `list` | `[a, b]` 字面量 | 每个元素分别作为输入连线 |
+| `number` | 数字 | 只能用于关键字参数 |
+
+### `@` 解析顺序
+
+`@name` / `@"name"` 依次匹配：节点 alias → 节点 title → 素材 title → 技能 title。同一级多个命中时报错并列出候选（提示改用 `@#id`）。`@#id` 直接按节点 id 匹配。
+
+素材落成节点：图片用 `insertAssistantImage` 同款元数据（`content`、`storageKey`、`naturalWidth/Height`、`mimeType`、`bytes`），视频参照 `handleAssetInsert` 的视频分支，文本落成 Text 节点（`metadata.content`）。全部通过 `add_node` op 完成，id 用 `nanoid()`。
+
+### 赋值规则
+
+赋值都会在目标节点上写 `metadata.alias = name`；若该 alias 已被其他节点占用，先清掉旧节点的 alias（下面的生成重跑除外）。
+
+| 右侧 | 行为 |
+|---|---|
+| `node` / `asset` | 只给该节点设置 alias，不新建（asset 先落成节点） |
+| `string` | alias 已指向 Text 节点时**原地更新** `content`；否则新建 Text 节点 |
+| `list` | alias 已指向 Reference 节点时**原地重连**（删旧入边、连新入边）；否则新建 Reference 节点并连入所有元素 |
+| `txt/img/vid/aud(...)` | **始终新建**输出节点。若 alias 已存在，把旧节点 alias 改成 `name_1`、`name_2`…（取最小未占用序号），新节点接管 `name` |
+
+数据类原地更新、生成类追加新节点。原因：已有内容的 Image 节点再跑 `handleGenerateNode` 会被当作「编辑」而非重新生成，新建空节点语义最干净；同时旧版本仍可通过 `name_1` 引用。
+
+不赋值的生成表达式自动命名为 `<函数名><最小未占用序号>`，如 `img1`。不赋值的非生成表达式（如单写 `girl`）等价于 `:focus girl`。
+
+### 生成函数
+
+`txt / img / vid / aud` 对应 `generationMode` 的 `text / image / video / audio`。参数处理：
+
+1. 位置参数里的 `node` / `list` / `asset` → 输入节点（去重，保持书写顺序）。
+2. 位置参数里的 `string` → 按顺序用 `\n` 拼接成 prompt。
+3. prompt 中的 `{name}` 插值：`name` 是文本节点时替换为其文本内容；是媒体节点时替换为该节点在本次输入中的引用标签（如「图片1」），并自动加入输入。标签由 `buildNodeMentionReferences` 对目标节点计算，与现有 `@` 引用标签一致。
+4. 关键字参数直接写到输出节点的 `metadata`，`buildGenerationConfig` 会优先读取节点上的值：
+
+| 参数 | metadata 字段 | 适用 |
+|---|---|---|
+| `model` | `model` | 全部 |
+| `skill` | `skillId` | txt |
+| `effort` | `reasoningEffort` | txt |
+| `n` | `textCount` / `count` | txt / img |
+| `size` | `size` | img / vid |
+| `quality` | `quality` | img |
+| `seconds` / `steps` | `seconds` / `steps` | vid |
+| `voice` / `speed` / `format` | `audioVoice` / `audioSpeed` / `audioFormat` | aud |
+
+未知参数报错，不静默忽略。参数表写成一个常量对象 `SCRIPT_KWARGS`，补全与校验共用。
+
+编译出的 ops（一次 `applyOps` 调用）：
+
+1. 需要时为 asset 输入 `add_node`。
+2. 旧 alias 重命名 `update_node`。
+3. `add_node`：空的 Text/Image/Video/Audio 节点，`metadata = { ...kwargs, alias, script: 原语句, generationMode }`，位置见「自动布局」。
+4. 每个输入一条 `connect_nodes`（输入 → 输出节点）。
+5. `run_generation { nodeId: 输出节点, mode, prompt }`。
+
+`handleGenerateNode` 对「空的同类型节点」已经是原地生成（`isEmptyImageNode` / `isEmptyTextNode` / `isEmptyVideoNode` / `isEmptyAudioNode` 分支），且通过 `getContextInputNodes` 读取入边作为参考，所以不需要任何改动。
+
+### 执行与异步
+
+- 每句提交后**立即返回**，生成在后台跑；用户可以继续输入下一句。
+- 运行时维护模块级 `pending: Map<alias, Promise<string>>`（值为节点 id）。生成语句的 alias 在 ops 应用后注册进 `pending`，节点状态离开 `loading` 时 resolve（`error` 时 reject）。
+- 语句求值时，凡引用到 `pending` 中的名字或 `status === "loading"` 的节点，先 `await` 其就绪再编译 ops。上游失败则本句标记失败：「依赖 shot 生成失败」。
+- 等待实现：`waitForNodes(ids)` 订阅 `useAgentStore`，检查 `canvasContext.snapshot.nodes` 中对应节点的 `metadata.status`，用完即退订。不加超时（生成本身已有超时），不新增重试。
+- 引用不存在的变量直接报错：「未定义的变量 xxx」。
+
+### 重跑 `name!`
+
+读取 `name` 节点的 `metadata.script`，原样重新执行该语句。因为语句里引用的是变量名，重跑会自动使用这些变量的**当前**值，这正是迭代时想要的。节点没有 `script` 字段（不是脚本生成的）时报错。
+
+### 命令
+
+| 命令 | 作用 |
+|---|---|
+| `:ls` | 列出所有有 alias 的节点：名字、类型、状态、标题 |
+| `:focus name` | 画布定位并选中该节点 |
+| `:mv old new` | 改 alias |
+| `:unname name` | 去掉 alias，不删节点 |
+| `:rm name...` | 删除节点（走 `delete_node`，可 `:undo`） |
+| `:undo` | 调用 `canvasContext.undoOps()` |
+| `:clear` | 清空控制台历史（不动画布） |
+| `:help` | 打印语法速查 |
+
+`:undo` 只能撤销最近一次 `applyOps`，且与本地 Agent 共用同一个撤销快照，这是现有 `useAgentBridge` 的限制，本期不扩展。画布自身的 `Cmd+Z` 仍然可用。
+
+### 自动布局
+
+新节点的位置在 `lib/canvas/canvas-script.ts` 的 `placeScriptNode(inputs, size, nodes, viewport)` 中计算：
+
+1. 有输入时：`x = max(输入右边缘) + 96`，`y = 输入纵向中心 - size.height / 2`（96 与 `handleGenerateNode` 的子节点间距一致）。
+2. 无输入时：放在当前视口中心（用 snapshot 的 `viewport` 加 `window` 尺寸换算）。
+3. 与已有节点矩形相交时向下平移 `相交节点底边 + 32`，循环到不相交为止。
+
+尺寸使用 `getNodeSpec(type)` 的默认宽高。
+
+## 控制台 UI
+
+- 位置：画布底部抽屉，宽度与画布区域一致，默认高 260px，可拖动上边缘调整高度（复用左侧面板拖宽的写法）。`Cmd/Ctrl + J` 开关（当前未占用），顶部工具栏加一个 `SquareTerminal` 图标按钮。开关状态放 `stores/canvas/use-canvas-script-store.ts`。
+- 布局：上方历史列表，下方输入编辑器。样式遵循画布主题（`canvasThemes` + `useThemeStore`），扁平无边框，等宽字体。
+- 历史条目：语句源码 + 状态点（运行中/完成/失败）+ 产出节点的小缩略图或文本前 40 字。点击条目里的变量名执行 `:focus`；点击条目把源码填回输入框。
+- 输入编辑器：使用项目已有的 `@uiw/react-codemirror`（参考 `components/layout/model-script-editor.tsx` 的用法）。`Enter` 执行，`Shift+Enter` 换行；粘贴多行时按行依次执行。输入框为空或光标在首/末行时 `↑/↓` 翻历史。
+- 语法高亮：用 CodeMirror `StreamLanguage` 写一个十几行的简单 tokenizer（字符串、`@引用`、`:命令`、函数名、注释），不写完整 Lezer 语法。
+- 所有文案走 i18n，key 放在 `canvas.script.*`，同步补 `zh-CN.ts` 和 `en-US.ts`。
+
+### 自动补全
+
+用 `@codemirror/autocomplete` 的 `autocompletion({ override: [source] })`。`@uiw/react-codemirror` 依赖里已包含该包，但要显式 `bun add @codemirror/autocomplete@<与 lock 中一致的版本>`，避免依赖未声明的传递依赖。
+
+候选按光标上下文区分：
+
+| 上下文 | 候选 | 插入内容 |
+|---|---|---|
+| `@` 之后 | 画布资源节点（`buildCanvasResourceReferences`）、Group/Reference 节点、我的素材（`useAssetStore`）、技能；在 `skill=` 后只列技能 | 有 alias 的节点插入 alias（不带 @）；否则插入 `@"标题"`，标题重名时插入 `@#id` |
+| 表达式位置的标识符 | 所有 alias 和 `txt/img/vid/aud` | 原样插入，函数插入 `img()` 并把光标放进括号 |
+| 生成函数括号内、`,` 之后 | 上面全部，外加当前函数可用的 `SCRIPT_KWARGS` | 参数插入 `size=` |
+| 行首 `:` 之后 | 命令列表 | 命令名 |
+
+候选项要显示类型图标（沿用 `lucide-react` 的 `Image / FileText / Video / Music2`）、标题和图片缩略图（CodeMirror `addToOptions` 渲染 `<img>`）。数据实时从 `useAgentStore.getState().canvasContext.snapshot` 读取，不做缓存。
+
+## 画布联动
+
+- **alias 徽标**：`canvas-node.tsx` 中有 `metadata.alias` 的节点在标题旁显示 `$alias`（`theme.node.muted` 色、小号等宽字体）；`canvas-side-panel.tsx` 的节点列表同样显示。
+- **脚本 → 画布**：`:focus` 和点击变量名通过 `emitCanvasEvent("script:focus", nodeId)` 通知 `project.tsx`，后者 `onCanvasEvent` 订阅后调用已有的 `focusNode`。这是本功能对 `project.tsx` 的主要改动之一。
+- **画布 → 脚本**：节点右键菜单新增「插入到脚本」，以及 `Alt + 点击节点`：节点无 alias 时按类型自动命名（`img3`、`txt2`…）并写入 alias，再 `emitCanvasEvent("script:insert", alias)`，控制台订阅后在光标处插入并聚焦。控制台未打开时自动打开。
+
+## 数据结构改动
+
+```ts
+// web/src/types/canvas.ts — CanvasNodeMetadata
+alias?: string;   // 脚本变量名，项目内唯一
+script?: string;  // 生成该节点的脚本语句，用于 name! 重跑
+
+// web/src/stores/canvas/use-canvas-store.ts — CanvasProject
+script: CanvasScriptEntry[];
+
+type CanvasScriptEntry = {
+    id: string;
+    source: string;
+    nodeIds: string[];          // 本句产出/绑定的节点
+    status: "running" | "success" | "error";
+    error?: string;
+    createdAt: string;
+};
+```
+
+`createProject` / `importProject` 初始化 `script: []`；`updateProject` 的 patch 类型加入 `script`。按项目约定不写旧数据兼容。`pending` 只存在于内存；页面重新加载后，历史里的 `running` 条目按其 `nodeIds` 对应节点的当前状态重新判定。历史写入用 `useCanvasStore.getState().updateProject(projectId, { script })`，`projectId` 取自 `canvasContext.snapshot.projectId`。同步更新 `docs/content/docs/development/canvas-data-structure*.mdx`。
+
+## 文件清单
+
+| 文件 | 内容 |
+|---|---|
+| `web/src/lib/canvas/canvas-script-parser.ts` | tokenizer、递归下降解析器、AST 类型、`ScriptParseError` |
+| `web/src/lib/canvas/canvas-script.ts` | 求值、`@` 解析、ops 编译、`SCRIPT_KWARGS`、`placeScriptNode`、`pending`、`waitForNodes`、命令实现 |
+| `web/src/components/canvas/canvas-script-console.tsx` | 抽屉、历史列表、CodeMirror 编辑器、高亮 |
+| `web/src/components/canvas/canvas-script-completion.ts` | 补全源 |
+| `web/src/stores/canvas/use-canvas-script-store.ts` | 抽屉开关、高度 |
+| `web/src/pages/canvas/project.tsx` | 挂载控制台；`Cmd+J`；订阅 `script:focus`；`Alt+点击` 和右键菜单「插入到脚本」 |
+| `web/src/components/canvas/canvas-node.tsx`、`canvas-side-panel.tsx` | alias 徽标 |
+| `web/src/types/canvas.ts`、`use-canvas-store.ts` | 数据结构 |
+| `web/src/i18n/locales/zh-CN.ts`、`en-US.ts` | 文案 |
+
+`canvas-script.ts` 与 `canvas-script-parser.ts` 是纯函数为主（除 `pending` / `waitForNodes`），在 `web/src/lib/canvas/` 下配 `bun test` 单元测试（`canvas-script-parser.test.ts`、`canvas-script.test.ts`：解析、`@` 解析、ops 编译、布局）。
+
+## 分阶段
+
+1. **MVP**：解析器；绑定、字符串、列表；`txt` / `img`；`{name}` 插值；`name!`；`:ls :focus :mv :unname :rm :undo :clear :help`；控制台、`@` 与变量补全；alias 徽标；历史持久化。
+2. **完善**：`vid` / `aud`；参数名补全和 `size` / `model` 等枚举值补全；变量悬停预览；`Alt + 点击` 和右键「插入到脚本」；高亮。
+3. **可选**：把选中子图导出为脚本；带参数的脚本片段（简单的函数复用）。
+
+## 验收用例
+
+1. `girl = @` 弹出补全，选中画布图片后插入 alias 或 `@"标题"`，回车后节点出现 `$girl` 徽标。
+2. `p = txt(girl, "描述{girl}的穿着")`：新 Text 节点出现在 `girl` 右侧，连线正确，提示词中 `{girl}` 变成「图片1」，生成完成后内容写入。
+3. 在 `p` 仍为 loading 时输入 `shot = img(girl, p)`：本句等待 `p` 完成后才建节点并生成。
+4. 再次执行 `shot = img(girl, p, size="2:3")`：旧节点变为 `$shot_1`，新节点为 `$shot`，位置不重叠。
+5. `shot!` 使用当前 `p` 重跑；`:undo` 撤销最近一次 ops。
+6. 画布上手动删除 `girl` 节点后执行 `img(girl, "x")`，报「未定义的变量 girl」。
+7. 刷新页面后控制台历史与 alias 仍在。
+8. 浅色/深色主题下控制台、补全弹层、徽标颜色均正确。
