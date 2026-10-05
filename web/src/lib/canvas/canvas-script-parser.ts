@@ -10,13 +10,16 @@ export type ScriptFunction = (typeof SCRIPT_FUNCTIONS)[number];
 export const SCRIPT_COMMANDS = ["ls", "focus", "mv", "unname", "rm", "undo", "clear", "help"] as const;
 export type ScriptCommandName = (typeof SCRIPT_COMMANDS)[number];
 
+// `:def` / `:del` / `:defs` take a raw template, so they are parsed as directives instead of commands.
+export const SCRIPT_DIRECTIVES = ["def", "del", "defs"] as const;
+
 export type ScriptExpr =
     | { type: "ref"; name: string; nodeId: boolean; quoted: boolean; from: number; to: number }
     | { type: "ident"; name: string; from: number; to: number }
     | { type: "string"; value: string; from: number; to: number }
     | { type: "number"; value: number; from: number; to: number }
     | { type: "list"; items: ScriptExpr[]; from: number; to: number }
-    | { type: "call"; name: ScriptFunction; args: ScriptArg[]; from: number; to: number };
+    | { type: "call"; name: string; args: ScriptArg[]; from: number; to: number };
 
 export type ScriptArg = { name?: string; value: ScriptExpr };
 
@@ -255,7 +258,6 @@ class Parser {
     }
 
     private parseCall(name: Extract<Token, { type: "ident" }>): ScriptExpr {
-        if (!(SCRIPT_FUNCTIONS as readonly string[]).includes(name.value)) throw fail("unknownFunction", name.from, name.to, { name: name.value });
         this.expectPunct("(");
         const args: ScriptArg[] = [];
         if (!(this.peek().type === "punct" && this.peek().value === ")")) {
@@ -266,7 +268,7 @@ class Parser {
             }
         }
         const end = this.expectPunct(")");
-        return { type: "call", name: name.value as ScriptFunction, args, from: name.from, to: end.to };
+        return { type: "call", name: name.value, args, from: name.from, to: end.to };
     }
 
     private parseArg(): ScriptArg {

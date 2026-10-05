@@ -78,6 +78,8 @@ type CanvasScriptEntry = {
 
 In-flight generations live in memory only (a `pending` map) and are never written to the project. After a reload, entries still marked `running` are re-judged from the current status of their `nodeIds`.
 
+Snippets (`:def`) expand the same way: a snippet is a parameterised text macro that is re-parsed as an ordinary statement and never added to project data. The snippet library lives in browser storage (`infinite-canvas:canvas_script_snippets`) and is not included in canvas export or sync.
+
 ## Assistant sessions
 
 ```ts

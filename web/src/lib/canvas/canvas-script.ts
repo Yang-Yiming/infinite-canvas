@@ -4,10 +4,11 @@ import i18n from "@/i18n";
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 import { emitCanvasEvent } from "@/lib/canvas/canvas-event-bus";
 import { fitNodeSize } from "@/lib/canvas/canvas-node-size";
-import { parseScriptLine, ScriptParseError, type ScriptExpr, type ScriptFunction, type ScriptStatement } from "@/lib/canvas/canvas-script-parser";
-import { buildNodeMentionReferences } from "@/lib/canvas/canvas-resource-references";
+import { parseScriptLine, SCRIPT_FUNCTIONS, ScriptParseError, type ScriptExpr, type ScriptFunction, type ScriptStatement } from "@/lib/canvas/canvas-script-parser";
+import { buildNodeMentionReferences, getGenerationResourceNodes } from "@/lib/canvas/canvas-resource-references";
 import { getNodeSpec } from "@/lib/canvas/node-registry";
 import { useAgentStore } from "@/stores/use-agent-store";
+import { useCanvasScriptSnippetStore, type CanvasScriptSnippet } from "@/stores/canvas/use-canvas-script-snippet-store";
 import { useCanvasScriptStore } from "@/stores/canvas/use-canvas-script-store";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasGenerationMode, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTypeId, type Position, type ViewportTransform } from "@/types/canvas";
@@ -21,6 +22,7 @@ export type ScriptWorld = {
     viewport: ViewportTransform;
     canvas: { width: number; height: number };
     assets: Asset[];
+    snippets: CanvasScriptSnippet[];
 };
 
 export type ScriptCompileResult = {
@@ -102,7 +104,7 @@ export function readScriptWorld(): ScriptWorld | null {
     const context = useAgentStore.getState().canvasContext;
     if (!context) return null;
     const { nodes, connections, viewport } = context.snapshot;
-    return { nodes, connections, viewport, canvas: useCanvasScriptStore.getState().canvasSize, assets: useAssetStore.getState().assets };
+    return { nodes, connections, viewport, canvas: useCanvasScriptStore.getState().canvasSize, assets: useAssetStore.getState().assets, snippets: useCanvasScriptSnippetStore.getState().snippets };
 }
 
 export function aliasNodes(alias: string, nodes: CanvasNodeData[]) {
@@ -284,22 +286,81 @@ function addNodeOp(node: CanvasNodeData): CanvasAgentOp {
 
 export type ScriptGenerationInput = { fn: ScriptFunction; call: Extract<ScriptExpr, { type: "call" }>; alias?: string; scriptSource: string; world: ScriptWorld };
 
-export function compileScriptStatement(statement: ScriptStatement, scriptSource: string, world: ScriptWorld): ScriptCompileResult {
+export function compileScriptStatement(statement: ScriptStatement, scriptSource: string, world: ScriptWorld, depth = 0): ScriptCompileResult {
     if (statement.type === "empty") return { ops: [], nodeIds: [] };
     if (statement.type === "assign") {
-        if (statement.value.type === "call") return compileGeneration({ fn: statement.value.name, call: statement.value, alias: statement.target, scriptSource, world });
+        if (statement.value.type === "call") return compileCall(statement.value, scriptSource, world, statement.target, depth);
         return bindValue(statement.target, evalExpr(statement.value, world), world);
     }
     if (statement.type === "expr") {
-        if (statement.value.type === "call") return compileGeneration({ fn: statement.value.name, call: statement.value, scriptSource, world });
+        if (statement.value.type === "call") return compileCall(statement.value, scriptSource, world, undefined, depth);
         return compileBareExpression(evalExpr(statement.value, world), world);
     }
     if (statement.type === "rerun") {
         const node = commandNodeArg(statement.target, world);
         if (!node.metadata?.script) return fail("noScriptLine", { name: statement.target });
-        return compileScriptStatement(parseScriptLine(node.metadata.script), node.metadata.script, world);
+        return compileScriptStatement(parseScriptLine(node.metadata.script), node.metadata.script, world, depth);
     }
     return compileCommand(statement, world);
+}
+
+const MAX_SNIPPET_DEPTH = 8;
+
+// Generation functions and user snippets share the call syntax; only the runtime knows which is which.
+function compileCall(call: Extract<ScriptExpr, { type: "call" }>, scriptSource: string, world: ScriptWorld, alias: string | undefined, depth: number): ScriptCompileResult {
+    if ((SCRIPT_FUNCTIONS as readonly string[]).includes(call.name)) return compileGeneration({ fn: call.name as ScriptFunction, call, alias, scriptSource, world });
+
+    const snippet = world.snippets.find((item) => item.name === call.name);
+    if (!snippet) return fail("unknownFunction", { name: call.name });
+    if (depth >= MAX_SNIPPET_DEPTH) return fail("snippetRecursion", { name: call.name });
+
+    const expanded = expandSnippet(snippet, call, scriptSource);
+    const inner = parseScriptLine(expanded);
+    if (inner.type !== "expr") return fail("snippetNotExpression", { name: call.name });
+    if (inner.value.type === "call") return compileCall(inner.value, expanded, world, alias, depth + 1);
+    const value = evalExpr(inner.value, world);
+    return alias ? bindValue(alias, value, world) : compileBareExpression(value, world);
+}
+
+function escapeStringContent(value: string) {
+    return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+}
+
+// Textual macro expansion: `{param}` is replaced with the caller's raw argument text, or with the
+// unquoted value when the placeholder sits inside a string literal of the template.
+function expandSnippet(snippet: CanvasScriptSnippet, call: Extract<ScriptExpr, { type: "call" }>, scriptSource: string) {
+    const positional = call.args.filter((arg) => !arg.name);
+    if (positional.length !== snippet.params.length) throw new CanvasScriptError("snippetArity", { name: snippet.name, expected: snippet.params.length, actual: positional.length });
+
+    const args = positional.map((arg) => ({ raw: scriptSource.slice(arg.value.from, arg.value.to), text: arg.value.type === "string" ? escapeStringContent(arg.value.value) : null }));
+    const template = snippet.template;
+    let result = "";
+    let inString = false;
+
+    for (let index = 0; index < template.length; index += 1) {
+        const char = template[index];
+        if (char === "\\" && inString) {
+            result += char + (template[index + 1] || "");
+            index += 1;
+            continue;
+        }
+        if (char === '"') {
+            inString = !inString;
+            result += char;
+            continue;
+        }
+        if (char === "{") {
+            const end = template.indexOf("}", index);
+            const paramIndex = end < 0 ? -1 : snippet.params.indexOf(template.slice(index + 1, end).trim());
+            if (paramIndex >= 0) {
+                result += inString ? (args[paramIndex].text ?? escapeStringContent(args[paramIndex].raw)) : args[paramIndex].raw;
+                index = end;
+                continue;
+            }
+        }
+        result += char;
+    }
+    return result;
 }
 
 function addAlias(node: CanvasNodeData, alias: string, nodes: CanvasNodeData[], ops: CanvasAgentOp[]) {
@@ -584,6 +645,126 @@ function compileCommand(statement: Extract<ScriptStatement, { type: "command" }>
 }
 
 // ---------------------------------------------------------------------------
+// Export selection as script
+
+export type ScriptSelectionExport = { lines: string[]; skipped: string[] };
+
+function quoteScript(value: string) {
+    return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`;
+}
+
+function exportReference(node: CanvasNodeData, nodes: CanvasNodeData[]) {
+    const duplicates = nodes.filter((item) => item.title === node.title).length;
+    return duplicates > 1 || !node.title ? `@#${node.id}` : `@${quoteScript(node.title)}`;
+}
+
+function exportKwargs(node: CanvasNodeData, mode: CanvasGenerationMode, assets: Asset[]) {
+    const metadata = node.metadata || {};
+    return Object.entries(SCRIPT_KWARGS).flatMap(([name, spec]): string[] => {
+        if (!spec.modes.includes(mode)) return [];
+        if (spec.skill) {
+            const skill = assets.find((asset) => asset.kind === "skill" && asset.id === metadata.skillId);
+            return skill ? [`skill=@${quoteScript(skill.title)}`] : [];
+        }
+        const field = typeof spec.field === "string" ? spec.field : spec.field[mode];
+        const value = field ? (metadata as Record<string, unknown>)[field] : undefined;
+        if (value === undefined || value === null || value === "") return [];
+        return [`${name}=${quoteScript(String(value))}`];
+    });
+}
+
+function exportNodeLine(node: CanvasNodeData, alias: string, inputs: string[], nodes: CanvasNodeData[], assets: Asset[]): string | null {
+    const metadata = node.metadata || {};
+    const mode = metadata.generationMode || (node.type === CanvasNodeType.Text && metadata.prompt ? ("text" as const) : undefined);
+    if (mode) {
+        const fn = Object.entries(SCRIPT_FUNCTION_MODES).find(([, value]) => value === mode)?.[0] || "img";
+        const prompt = metadata.prompt || metadata.composerContent || "";
+        return `${alias} = ${fn}(${[...inputs, ...(prompt ? [quoteScript(prompt)] : []), ...exportKwargs(node, mode, assets)].join(", ")})`;
+    }
+    if (node.type === CanvasNodeType.Text && metadata.content) return `${alias} = ${quoteScript(metadata.content)}`;
+    if (metadata.content || node.type === CanvasNodeType.Reference) return `${alias} = ${exportReference(node, nodes)}`;
+    return null;
+}
+
+/**
+ * Turn the selected nodes (plus whatever they depend on) into console statements.
+ * Generations are rebuilt from node metadata; files that cannot be recreated stay as `@` bindings.
+ */
+export function scriptForSelection(nodes: CanvasNodeData[], connections: CanvasConnection[], selectedIds: string[], assets: Asset[] = useAssetStore.getState().assets): ScriptSelectionExport {
+    const selected = new Set(selectedIds);
+    const aliases = new Map<string, string>();
+    const visiting = new Set<string>();
+    const lines: string[] = [];
+    const skipped: string[] = [];
+
+    const emit = (node: CanvasNodeData) => {
+        if (aliases.has(node.id) || visiting.has(node.id)) return;
+        if (node.type === CanvasNodeType.Group || node.type === CanvasNodeType.Config) {
+            skipped.push(node.title || node.type);
+            return;
+        }
+
+        visiting.add(node.id);
+        const inputs = getGenerationResourceNodes(node.id, nodes, connections).filter((input) => input.type !== CanvasNodeType.Group && input.type !== CanvasNodeType.Config);
+        inputs.forEach(emit);
+        visiting.delete(node.id);
+
+        const alias = node.metadata?.alias || autoAliasForNode(node, nodes);
+        const inputAliases = inputs.map((input) => aliases.get(input.id)).filter((item): item is string => Boolean(item));
+        const line = exportNodeLine(node, alias, inputAliases, nodes, assets);
+        if (!line) {
+            skipped.push(node.title || node.type);
+            return;
+        }
+        aliases.set(node.id, alias);
+        lines.push(line);
+    };
+
+    nodes.filter((node) => selected.has(node.id)).forEach(emit);
+    if (!lines.length) return { lines: [], skipped };
+    const header = [i18n.t("canvas.script.exportHeader")];
+    if (skipped.length) header.push(i18n.t("canvas.script.exportSkipped", { names: Array.from(new Set(skipped)).join("、") }));
+    return { lines: [...header, ...lines], skipped };
+}
+
+// ---------------------------------------------------------------------------
+// Snippets (`:def name(params) <expression template>`)
+
+export type ScriptDirective = { type: "def"; name: string; params: string[]; template: string } | { type: "del"; name: string } | { type: "defs" };
+
+const IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_]*$/u;
+
+/** `:def` takes a raw template, so it never goes through the statement parser. */
+export function parseScriptDirective(source: string): ScriptDirective | null {
+    const def = /^\s*:def\s+([^\s(]+)\s*(?:\(([^)]*)\))?\s+(\S.*)$/u.exec(source);
+    if (def) {
+        const params = def[2] === undefined ? [] : def[2].split(",").map((item) => item.trim()).filter(Boolean);
+        if (!IDENTIFIER.test(def[1]) || params.some((param) => !IDENTIFIER.test(param))) return fail("snippetInvalid", { name: def[1] });
+        if (new Set(params).size !== params.length) return fail("snippetInvalid", { name: def[1] });
+        return { type: "def", name: def[1], params, template: def[3].trim() };
+    }
+    const del = /^\s*:del\s+(\S+)\s*$/u.exec(source);
+    if (del) return { type: "del", name: del[1] };
+    if (/^\s*:defs\s*$/u.test(source)) return { type: "defs" };
+    return null;
+}
+
+function runScriptDirective(directive: ScriptDirective): ScriptRunResult {
+    const store = useCanvasScriptSnippetStore.getState();
+    if (directive.type === "def") {
+        store.saveSnippet(directive.name, directive.params, directive.template);
+        return { status: "success", nodeIds: [], output: i18n.t("canvas.script.snippetDefined", { name: directive.name, params: directive.params.join(", "), template: directive.template }) };
+    }
+    if (directive.type === "del") {
+        if (!store.snippets.some((snippet) => snippet.name === directive.name)) return failure(new CanvasScriptError("snippetMissing", { name: directive.name }));
+        store.removeSnippet(directive.name);
+        return { status: "success", nodeIds: [], output: i18n.t("canvas.script.snippetRemoved", { name: directive.name }) };
+    }
+    const listed = store.snippets;
+    return { status: "success", nodeIds: [], output: listed.length ? listed.map((snippet) => `:def ${snippet.name}(${snippet.params.join(", ")}) ${snippet.template}`).join("\n") : i18n.t("canvas.script.snippetEmpty") };
+}
+
+// ---------------------------------------------------------------------------
 // Pending generations and dependency waiting
 
 type PendingRecord = { promise: Promise<void>; failure?: string };
@@ -659,6 +840,15 @@ export function interpolationNames(source: string): string[] {
 // Execution
 
 export async function runScriptLine(source: string): Promise<ScriptRunResult> {
+    const directive = parseScriptDirective(source);
+    if (directive) {
+        try {
+            return runScriptDirective(directive);
+        } catch (error) {
+            return failure(error);
+        }
+    }
+
     let statement: ScriptStatement;
     try {
         statement = parseScriptLine(source);

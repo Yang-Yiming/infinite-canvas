@@ -5,7 +5,7 @@ import type { Asset } from "../src/stores/use-asset-store";
 // i18n reads localStorage at import time; shim it before the dynamic imports below.
 if (!("localStorage" in globalThis)) Object.defineProperty(globalThis, "localStorage", { value: { getItem: () => null, setItem: () => undefined, removeItem: () => undefined } });
 
-const { compileScriptStatement, placeScriptNode, CanvasScriptError, SCRIPT_KWARGS } = await import("../src/lib/canvas/canvas-script");
+const { compileScriptStatement, placeScriptNode, parseScriptDirective, scriptForSelection, CanvasScriptError, SCRIPT_KWARGS } = await import("../src/lib/canvas/canvas-script");
 const { parseScriptLine } = await import("../src/lib/canvas/canvas-script-parser");
 const { imageReferenceLabel } = await import("../src/lib/image-reference-prompt");
 const { CanvasNodeType } = await import("../src/types/canvas");
@@ -25,8 +25,8 @@ function imageAsset(id: string, title: string): Asset {
     return { id, kind: "image", title, coverUrl: "", tags: [], createdAt: "", updatedAt: "", data: { dataUrl: `image:${id}`, storageKey: `image:${id}`, width: 800, height: 1200, bytes: 12, mimeType: "image/png" } };
 }
 
-function world(nodes: ReturnType<typeof imageNode>[] = [], assets: Asset[] = []) {
-    return { nodes, connections: [], viewport: VIEWPORT, canvas: CANVAS, assets };
+function world(nodes: ReturnType<typeof imageNode>[] = [], assets: Asset[] = [], snippets: { id: string; name: string; params: string[]; template: string }[] = []) {
+    return { nodes, connections: [], viewport: VIEWPORT, canvas: CANVAS, assets, snippets };
 }
 
 function compile(source: string, w = world()) {
@@ -128,6 +128,68 @@ test("keyword arguments are declared per generation mode", () => {
     expect(Object.keys(SCRIPT_KWARGS)).toContain("voice");
     expect(SCRIPT_KWARGS.voice.modes).toEqual(["audio"]);
     expect(SCRIPT_KWARGS.n.field).toEqual({ text: "textCount", image: "count" });
+});
+
+test("snippets expand parameters textually, in and out of string literals", () => {
+    const snippet = { id: "s1", name: "cover", params: ["src", "text"], template: 'img({src}, "{text}", size="2:3")' };
+    const girl = imageNode("n1", "girl");
+
+    const quoted = compile('hero = cover(girl, "夜色")', world([girl], [], [snippet]));
+    const added = quoted.ops.find((op) => op.type === "add_node") as { id: string; metadata: Record<string, unknown> } | undefined;
+    expect(added?.metadata).toMatchObject({ alias: "hero", size: "2:3", script: 'img(girl, "夜色", size="2:3")' });
+    expect(quoted.ops).toContainEqual({ type: "connect_nodes", fromNodeId: "n1", toNodeId: added?.id });
+    expect(quoted.ops.at(-1)).toMatchObject({ type: "run_generation", prompt: "夜色" });
+
+    // A bare argument inside a string literal becomes literal text, and string escaping is preserved.
+    const bare = compile('hero = cover(girl, 夜色)', world([girl], [], [snippet]));
+    expect(bare.ops.at(-1)).toMatchObject({ prompt: "夜色" });
+    const escaped = compile('hero = cover(girl, "a\\"b")', world([girl], [], [snippet]));
+    expect(escaped.ops.at(-1)).toMatchObject({ prompt: 'a"b' });
+});
+
+test("snippets can call other snippets but rejected calls report their reason", () => {
+    const girl = imageNode("n1", "girl");
+    const hero = imageNode("n2", "hero1");
+    const snippets = [
+        { id: "s1", name: "polish", params: ["img"], template: "cover({img})" },
+        { id: "s2", name: "cover", params: ["aimg"], template: 'img({aimg}, "终稿")' },
+    ];
+    expect(compile("hero = polish(hero1)", world([girl, hero], [], snippets)).ops.at(-1)).toMatchObject({ prompt: "终稿" });
+
+    const error = (() => {
+        try {
+            compile("missing(girl)", world([girl]));
+            return null;
+        } catch (caught) {
+            return caught as InstanceType<typeof CanvasScriptError>;
+        }
+    })();
+    expect(error?.code).toBe("unknownFunction");
+    expect(() => compile("cover(girl)", world([girl], [], [{ id: "s1", name: "cover", params: ["a", "b"], template: "img({a})" }]))).toThrow("需要 2 个参数");
+});
+
+test("parses def/del/defs directives and rejects invalid ones", () => {
+    expect(parseScriptDirective(':def cover(src, text) img({src}, "{text}")')).toEqual({ type: "def", name: "cover", params: ["src", "text"], template: 'img({src}, "{text}")' });
+    expect(parseScriptDirective(":def reset() img(\"空白\")")).toEqual({ type: "def", name: "reset", params: [], template: 'img("空白")' });
+    expect(parseScriptDirective(":del cover")).toEqual({ type: "del", name: "cover" });
+    expect(parseScriptDirective(":defs")).toEqual({ type: "defs" });
+    expect(parseScriptDirective(":ls")).toBeNull();
+    expect(() => parseScriptDirective(':def 1bad(a) img("x")')).toThrow("不合法");
+    expect(() => parseScriptDirective(':def dup(a, a) img("x")')).toThrow("不合法");
+});
+
+test("exports the selected subgraph as statements", () => {
+    const girl = imageNode("n1", "girl");
+    const prompt = { ...textNode("t1", "", "p"), metadata: { prompt: "分镜", status: "loading" as const, alias: "p", generationMode: "text" as const } };
+    const shot = { ...imageNode("n2", "shot"), metadata: { prompt: "夜色", status: "success" as const, alias: "shot", generationMode: "image" as const, size: "2:3", model: "default::gpt-image-2" } };
+    const connections = [
+        { id: "c1", fromNodeId: "n1", toNodeId: "n2" },
+        { id: "c2", fromNodeId: "t1", toNodeId: "n2" },
+    ];
+
+    const result = scriptForSelection([girl, prompt, shot], connections, ["n2"], []);
+    expect(result.lines).toEqual(["# 由画布选区导出", 'girl = @"n1 图片"', 'p = txt("分镜")', 'shot = img(girl, p, "夜色", model="default::gpt-image-2", size="2:3")']);
+    expect(result.skipped).toEqual([]);
 });
 
 test("layout places new nodes right of their inputs and centers anchorless nodes", () => {

@@ -213,6 +213,14 @@ export function CanvasScriptConsole({ projectId }: { projectId: string }) {
         const view = editorRef.current?.view;
         if (!view || pendingInsert === null) return;
         consumeInsert();
+        // Multi-line payloads (subgraph exports) always go at the end so existing drafts stay intact.
+        if (pendingInsert.includes("\n")) {
+            const end = view.state.doc.length;
+            const insert = `${end ? "\n" : ""}${pendingInsert}`;
+            view.dispatch({ changes: { from: end, insert }, selection: { anchor: end + insert.length } });
+            view.focus();
+            return;
+        }
         const head = view.state.selection.main.head;
         const before = view.state.sliceDoc(Math.max(0, head - 1), head);
         const insert = before && !/[\s(,[]/.test(before) ? ` ${pendingInsert}` : pendingInsert;

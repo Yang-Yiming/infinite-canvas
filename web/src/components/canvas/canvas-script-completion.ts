@@ -3,12 +3,13 @@ import type { EditorView } from "@codemirror/view";
 
 import i18n from "@/i18n";
 import { SCRIPT_FUNCTION_MODES, SCRIPT_KWARGS } from "@/lib/canvas/canvas-script";
-import { SCRIPT_COMMANDS, SCRIPT_FUNCTIONS, type ScriptFunction } from "@/lib/canvas/canvas-script-parser";
+import { SCRIPT_COMMANDS, SCRIPT_DIRECTIVES, SCRIPT_FUNCTIONS, type ScriptFunction } from "@/lib/canvas/canvas-script-parser";
 import { buildCanvasResourceReferences } from "@/lib/canvas/canvas-resource-references";
 import { previewUrlFor } from "@/services/image-storage";
 import { modelOptionLabel, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { assetCoverUrl, useAssetStore, type Asset } from "@/stores/use-asset-store";
+import { useCanvasScriptSnippetStore } from "@/stores/canvas/use-canvas-script-snippet-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 type ScriptIconKind = "image" | "text" | "video" | "audio" | "pack" | "skill" | "function" | "command" | "kwarg";
@@ -29,6 +30,9 @@ const COMMAND_LABELS: Record<string, string> = {
     undo: "undo",
     clear: "clear history",
     help: "help",
+    def: "def name(params) <expression>",
+    del: "del <name>",
+    defs: "defs — list snippets",
 };
 
 function aliasOptions(): ScriptCompletion[] {
@@ -76,19 +80,23 @@ function assetOptions(assets: Asset[], skillOnly: boolean): ScriptCompletion[] {
 }
 
 function functionOptions(): ScriptCompletion[] {
-    return SCRIPT_FUNCTIONS.map(
-        (name): ScriptCompletion => ({
-            label: name,
-            detail: i18n.t(`canvas.script.modes.${SCRIPT_FUNCTION_MODES[name]}`),
-            type: "function",
-            scriptIcon: "function",
-            apply: (view: EditorView, _completion, from: number, to: number) => view.dispatch({ changes: { from, to, insert: `${name}()` }, selection: { anchor: from + name.length + 1 } }),
-        }),
-    );
+    const snippets = useCanvasScriptSnippetStore.getState().snippets.map((snippet): ScriptCompletion => ({ label: snippet.name, detail: `:def ${snippet.name}(${snippet.params.join(", ")}) ${snippet.template}`, type: "function", scriptIcon: "function", apply: `${snippet.name}()` }));
+    return [
+        ...SCRIPT_FUNCTIONS.map(
+            (name): ScriptCompletion => ({
+                label: name,
+                detail: i18n.t(`canvas.script.modes.${SCRIPT_FUNCTION_MODES[name]}`),
+                type: "function",
+                scriptIcon: "function",
+                apply: (view: EditorView, _completion, from: number, to: number) => view.dispatch({ changes: { from, to, insert: `${name}()` }, selection: { anchor: from + name.length + 1 } }),
+            }),
+        ),
+        ...snippets,
+    ];
 }
 
 function commandOptions(): ScriptCompletion[] {
-    return SCRIPT_COMMANDS.map((name): ScriptCompletion => ({ label: name, detail: COMMAND_LABELS[name], type: "keyword", scriptIcon: "command" }));
+    return [...SCRIPT_COMMANDS, ...SCRIPT_DIRECTIVES].map((name): ScriptCompletion => ({ label: name, detail: COMMAND_LABELS[name], type: "keyword", scriptIcon: "command" }));
 }
 
 function kwargOptions(fn: ScriptFunction): ScriptCompletion[] {

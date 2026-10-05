@@ -148,6 +148,8 @@ type CanvasScriptEntry = {
 
 执行中的生成只存在于内存（`pending`），不写入项目数据；页面刷新后，历史里仍是 `running` 的条目会按 `nodeIds` 对应节点的实际状态重新判定为成功或失败。
 
+脚本片段（`:def`）用同样的方法展开：片段只是带参数的文本宏，展开后重新解析为普通语句，未添加到项目数据；片段库单独保存在浏览器本地（`infinite-canvas:canvas_script_snippets`），不随画布导出或同步。
+
 ## 连线结构
 
 每条连线是一个 `CanvasConnection`：

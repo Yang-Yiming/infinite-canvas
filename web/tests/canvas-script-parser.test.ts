@@ -41,6 +41,11 @@ test("decodes string escapes", () => {
     expect(parseScriptLine('a = "第一行\\n第二行 \\"引用\\""')).toMatchObject({ value: { type: "string", value: '第一行\n第二行 "引用"' } });
 });
 
+test("leaves call names to the runtime so snippets can be called like functions", () => {
+    expect(parseScriptLine("cover(girl, 夜色)")).toMatchObject({ type: "expr", value: { type: "call", name: "cover", args: [{ value: { name: "girl" } }, { value: { name: "夜色" } }] } });
+    expect(parseScriptLine('hero = cover(girl, "夜色")')).toMatchObject({ type: "assign", target: "hero", value: { type: "call", name: "cover" } });
+});
+
 test("reports parse errors with positions", () => {
     const unterminated = (() => {
         try {
@@ -53,7 +58,6 @@ test("reports parse errors with positions", () => {
     expect(unterminated).toBeInstanceOf(ScriptParseError);
     expect(unterminated?.from).toBe(4);
 
-    expect(() => parseScriptLine("foo(girl)")).toThrow(ScriptParseError);
     expect(() => parseScriptLine(":nope")).toThrow(ScriptParseError);
     expect(() => parseScriptLine("girl = @")).toThrow(ScriptParseError);
     expect(() => parseScriptLine("shot = img(girl")).toThrow(ScriptParseError);

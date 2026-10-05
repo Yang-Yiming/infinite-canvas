@@ -270,7 +270,9 @@ export default {
         script: {
             title: "Script console", placeholder: "Type a statement and press Enter; @ picks resources, Shift+Enter for a new line", close: "Collapse console", resize: "Resize console height", empty: "Nothing executed yet. Try `girl = @` to bind a node.", aliasBadge: "Script variable",
             insert: "Insert into script", insertTitle: "Insert this node into the script console (Alt+click a node)", clear: "Console history cleared", emptyList: "No named nodes on this canvas yet",
-            helpText: "Quick reference\n  bind     girl = @Portrait.png\n  text     style = \"cyberpunk, neon night\"\n  pack     cast = [girl, bgm]\n  generate shot = img(girl, style, size=\"2:3\", n=2)\n  rerun    shot!\n  command  :ls  :focus name  :mv old new  :unname name  :rm name  :undo  :clear  :help\n  inject   \"describe {girl}'s outfit\"\nFunctions: txt (text) img (image) vid (video) aud (audio)",
+            export: "Export as script", exportEmpty: "The selection has nothing exportable", exportHeader: "# Exported from the canvas selection", exportSkipped: "# Skipped: {{names}}",
+            snippetDefined: "Snippet defined: :def {{name}}({{params}}) {{template}}", snippetRemoved: "Removed snippet {{name}}", snippetEmpty: "No snippets yet; define one with :def name(params) expression",
+            helpText: "Quick reference\n  bind     girl = @Portrait.png\n  text     style = \"cyberpunk, neon night\"\n  pack     cast = [girl, bgm]\n  generate shot = img(girl, style, size=\"2:3\", n=2)\n  rerun    shot!\n  snippet  :def cover(src, text) img({src}, \"{text}\")  →  hero = cover(girl, night)\n  command  :ls  :focus name  :mv old new  :unname name  :rm name  :undo  :clear  :help  :def  :del  :defs\n  inject   \"describe {girl}'s outfit\"\nFunctions: txt (text) img (image) vid (video) aud (audio)",
             candidates: { node: "nodes", asset: "assets", skill: "skills" },
             modes: { text: "txt", image: "img", video: "vid", audio: "aud" },
             status: { running: "Running", success: "Done", error: "Failed" },
@@ -280,6 +282,7 @@ export default {
                 unknownKwarg: "{{mode}} does not accept the {{name}} argument", invalidKwargValue: "Invalid value for {{name}}; use a string or number", unknownSkill: "Unknown skill {{name}}",
                 invalidValue: "Cannot assign this value to {{alias}}", invalidInput: "Generation inputs must be nodes, assets, or reference packs", invalidInterpolation: "{{name}} cannot be used inside { } interpolation", invalidExpression: "A bare expression must be a node or an asset",
                 positionalNumber: "Numbers can only be used as keyword arguments", missingArgument: "Command {{name}} requires an argument", dependencyFailed: "Dependency {{name}} failed to generate", noScriptLine: "Node {{name}} was not created by the script, so it cannot be rerun", nothingToUndo: "Nothing to undo",
+                snippetInvalid: "Invalid name or parameters for snippet {{name}}", snippetRecursion: "Snippet {{name}} expanded into itself and was stopped", snippetArity: "Snippet {{name}} expects {{expected}} parameters but got {{actual}}", snippetNotExpression: "A snippet template must be an expression, not an assignment or command", snippetMissing: "Unknown snippet {{name}}",
             },
             parse: {
                 unexpectedCharacter: "Unexpected character {{char}}", unterminatedString: "Unterminated string", badEscape: "Unsupported escape sequence", emptyReference: "Missing name after @", unexpectedToken: "Unexpected input {{token}}", unknownFunction: "Unknown function {{name}}", unknownCommand: "Unknown command {{name}}",

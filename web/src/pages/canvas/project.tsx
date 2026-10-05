@@ -47,7 +47,7 @@ import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useCanvasScriptStore } from "@/stores/canvas/use-canvas-script-store";
-import { autoAliasForNode } from "@/lib/canvas/canvas-script";
+import { autoAliasForNode, scriptForSelection } from "@/lib/canvas/canvas-script";
 import { onCanvasEvent } from "@/lib/canvas/canvas-event-bus";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
@@ -1171,6 +1171,19 @@ function InfiniteCanvasPage() {
         },
         [insertIntoScript, openScriptConsole],
     );
+
+    // Rebuild the selected subgraph (plus its dependencies) as console statements the user can review.
+    const exportSelectionToScript = useCallback(() => {
+        const selected = Array.from(selectedNodeIdsRef.current);
+        if (!selected.length) return;
+        const { lines } = scriptForSelection(nodesRef.current, connectionsRef.current, selected);
+        if (lines.length <= 1) {
+            message.info(t("canvas.script.exportEmpty"));
+            return;
+        }
+        openScriptConsole();
+        insertIntoScript(lines.join("\n"));
+    }, [insertIntoScript, message, openScriptConsole, t]);
 
     const setZoomScale = useCallback(
         (scale: number) => {
@@ -3419,6 +3432,11 @@ function InfiniteCanvasPage() {
                         onInsertToScript={() => {
                             if (contextMenu.type !== "node") return;
                             insertNodeIntoScript(contextMenu.nodeId);
+                            setContextMenu(null);
+                        }}
+                        onExportToScript={() => {
+                            if (contextMenu.type !== "node") return;
+                            exportSelectionToScript();
                             setContextMenu(null);
                         }}
                         onDelete={() => {
