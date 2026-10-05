@@ -174,6 +174,7 @@ export function CanvasScriptConsole({ projectId }: { projectId: string }) {
                     continue;
                 }
                 writeEntries(readEntries().map((item) => (item.id === entry.id ? { ...item, status: result.settled ? "running" : result.status, nodeIds: result.nodeIds, error: result.error, output: result.output } : item)));
+                if (result.refill) setValue(result.refill);
                 // Generation keeps running in the background; finalize the entry once its output node settles.
                 void result.settled?.then((error) => writeEntries(readEntries().map((item) => (item.id === entry.id ? { ...item, status: error ? "error" : "success", error } : item))));
             }

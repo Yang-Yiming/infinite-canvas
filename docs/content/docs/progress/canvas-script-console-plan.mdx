@@ -5,6 +5,8 @@ description: Drive the node graph with keyboard statements instead of dragging c
 
 # Canvas Script Console
 
+> Implementation status: phases 1-3 are done, with the interaction adjusted in real use. A generation statement only creates its node (the prompt is stored on the node and its panel opens automatically); append `!` to generate immediately. A bare `name!` runs the existing node, `:replay name` refills its stored statement, and `@name` inside a prompt resolves to a real reference. See the [Canvas Script Console](/docs/canvas/canvas-script-console) guide for the shipped behaviour.
+
 The Chinese version ([画布脚本控制台规划](/zh-CN/docs/progress/canvas-script-console-plan)) is the authoritative spec, including the full kwargs table, completion rules, file list, and acceptance cases. This page summarizes it.
 
 ## Principles

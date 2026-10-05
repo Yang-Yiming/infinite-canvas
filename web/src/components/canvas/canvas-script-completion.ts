@@ -27,6 +27,7 @@ const COMMAND_LABELS: Record<string, string> = {
     mv: "mv <old> <new>",
     unname: "unname <name>",
     rm: "rm <name>...",
+    replay: "replay <name> — refill its statement",
     undo: "undo",
     clear: "clear history",
     help: "help",

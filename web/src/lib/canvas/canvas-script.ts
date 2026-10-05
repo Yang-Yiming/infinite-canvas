@@ -30,7 +30,10 @@ export type ScriptCompileResult = {
     nodeIds: string[];
     alias?: string;
     outputNodeId?: string;
+    run?: boolean;
     focusNodeId?: string;
+    openNodeId?: string;
+    refill?: string;
     output?: string;
     undo?: boolean;
     clearHistory?: boolean;
@@ -42,6 +45,7 @@ export type ScriptRunResult = {
     error?: string;
     errorAt?: number;
     output?: string;
+    refill?: string;
     clearHistory?: boolean;
     // Present for generation statements: resolves with an error message, or undefined once the output node succeeds.
     settled?: Promise<string | undefined>;
@@ -286,7 +290,7 @@ function addNodeOp(node: CanvasNodeData): CanvasAgentOp {
 // ---------------------------------------------------------------------------
 // Statement compilation
 
-export type ScriptGenerationInput = { fn: ScriptFunction; call: Extract<ScriptExpr, { type: "call" }>; alias?: string; scriptSource: string; world: ScriptWorld };
+export type ScriptGenerationInput = { fn: ScriptFunction; call: Extract<ScriptExpr, { type: "call" }>; alias?: string; scriptSource: string; world: ScriptWorld; run?: boolean };
 
 export function compileScriptStatement(statement: ScriptStatement, scriptSource: string, world: ScriptWorld, depth = 0): ScriptCompileResult {
     if (statement.type === "empty") return { ops: [], nodeIds: [] };
@@ -299,9 +303,10 @@ export function compileScriptStatement(statement: ScriptStatement, scriptSource:
         return compileBareExpression(evalExpr(statement.value, world), world);
     }
     if (statement.type === "rerun") {
+        // `name!` runs the existing node with whatever it currently holds; it never creates a node.
         const node = commandNodeArg(statement.target, world);
-        if (!node.metadata?.script) return fail("noScriptLine", { name: statement.target });
-        return compileScriptStatement(parseScriptLine(node.metadata.script), node.metadata.script, world, depth);
+        if (node.metadata?.status === "loading") return fail("alreadyRunning", { name: statement.target });
+        return { ops: [{ type: "run_generation", nodeId: node.id }], nodeIds: [node.id], alias: node.metadata?.alias, outputNodeId: node.id, run: true, openNodeId: node.id };
     }
     return compileCommand(statement, world);
 }
@@ -309,8 +314,9 @@ export function compileScriptStatement(statement: ScriptStatement, scriptSource:
 const MAX_SNIPPET_DEPTH = 8;
 
 // Generation functions and user snippets share the call syntax; only the runtime knows which is which.
-function compileCall(call: Extract<ScriptExpr, { type: "call" }>, scriptSource: string, world: ScriptWorld, alias: string | undefined, depth: number): ScriptCompileResult {
-    if ((SCRIPT_FUNCTIONS as readonly string[]).includes(call.name)) return compileGeneration({ fn: call.name as ScriptFunction, call, alias, scriptSource, world });
+function compileCall(call: Extract<ScriptExpr, { type: "call" }>, scriptSource: string, world: ScriptWorld, alias: string | undefined, depth: number, inheritedRun = false): ScriptCompileResult {
+    const run = inheritedRun || call.run === true;
+    if ((SCRIPT_FUNCTIONS as readonly string[]).includes(call.name)) return compileGeneration({ fn: call.name as ScriptFunction, call, alias, scriptSource, world, run });
 
     const snippet = world.snippets.find((item) => item.name === call.name);
     if (!snippet) return fail("unknownFunction", { name: call.name });
@@ -319,7 +325,7 @@ function compileCall(call: Extract<ScriptExpr, { type: "call" }>, scriptSource: 
     const expanded = expandSnippet(snippet, call, scriptSource);
     const inner = parseScriptLine(expanded);
     if (inner.type !== "expr") return fail("snippetNotExpression", { name: call.name });
-    if (inner.value.type === "call") return compileCall(inner.value, expanded, world, alias, depth + 1);
+    if (inner.value.type === "call") return compileCall(inner.value, expanded, world, alias, depth + 1, run);
     const value = evalExpr(inner.value, world);
     return alias ? bindValue(alias, value, world) : compileBareExpression(value, world);
 }
@@ -475,7 +481,7 @@ function compileBareExpression(value: ScriptValue, world: ScriptWorld): ScriptCo
 }
 
 function compileGeneration(input: ScriptGenerationInput): ScriptCompileResult {
-    const { fn, call, scriptSource, world } = input;
+    const { fn, call, scriptSource, world, run = false } = input;
     const mode = SCRIPT_FUNCTION_MODES[fn];
     const nodeType = MODE_NODE_TYPES[mode];
     const spec = getNodeSpec(nodeType);
@@ -507,17 +513,36 @@ function compileGeneration(input: ScriptGenerationInput): ScriptCompileResult {
 
     const outputId = nanoid();
     const markers: { key: string; token: string; value: ScriptValue }[] = [];
+    const addMarker = (token: string, value: ScriptValue) => {
+        const key = `\u0000${markers.length}\u0000`;
+        markers.push({ key, token, value });
+        return key;
+    };
     const parts = promptParts.map((part) =>
-        part.replace(/\{([^{}]*)\}/g, (match, raw: string) => {
-            const token = raw.trim();
-            if (!token) return match;
-            const value = token.startsWith("@") ? resolveReference(token.slice(1), token.startsWith("@#"), world) : resolveIdent(token, world);
-            if (value.kind === "node" && value.node.type === CanvasNodeType.Text) return value.node.metadata?.content || value.node.metadata?.prompt || "";
-            if (value.kind !== "node" && value.kind !== "asset") return fail("invalidInterpolation", { name: token });
-            if (value.kind === "asset" && value.asset.kind === "skill") return fail("invalidInterpolation", { name: token });
-            const key = `\u0000${markers.length}\u0000`;
-            markers.push({ key, token, value });
-            return key;
+        part.replace(/\{([^{}]*)\}|@(?:"([^"]*)"|([^\s,()\[\]="]*))/g, (match: string, brace: string | undefined, quoted: string | undefined, bare: string | undefined) => {
+            if (brace !== undefined) {
+                const token = brace.trim();
+                if (!token) return match;
+                const value = token.startsWith("@") ? resolveReference(token.slice(1), token.startsWith("@#"), world) : resolveIdent(token, world);
+                if (value.kind === "node" && value.node.type === CanvasNodeType.Text) return value.node.metadata?.content || value.node.metadata?.prompt || "";
+                if (value.kind !== "node" && value.kind !== "asset") return fail("invalidInterpolation", { name: token });
+                if (value.kind === "asset" && value.asset.kind === "skill") return fail("invalidInterpolation", { name: token });
+                return addMarker(token, value);
+            }
+
+            // `@name` written inside a prompt behaves like `{name}` when it resolves to a node or asset;
+            // anything else (emails, handles, unknown names) stays literal instead of failing the line.
+            const name = (quoted ?? bare ?? "").trim();
+            if (!name) return match;
+            let value: ScriptValue;
+            try {
+                value = resolveReference(name.startsWith("#") ? name.slice(1) : name, name.startsWith("#"), world);
+            } catch {
+                return match;
+            }
+            if (value.kind === "asset" && value.asset.kind === "skill") return match;
+            if (value.kind !== "node" && value.kind !== "asset") return match;
+            return addMarker(name, value);
         }),
     );
 
@@ -551,11 +576,21 @@ function compileGeneration(input: ScriptGenerationInput): ScriptCompileResult {
         });
     }
 
+    // The prompt lives on the node so the console can hand the user a prefilled node to send by hand.
+    node.metadata = { ...node.metadata, prompt };
+
     return {
-        ops: [...preOps, addNodeOp(node), ...inputs.map((input) => ({ type: "connect_nodes" as const, fromNodeId: input.id, toNodeId: outputId })), { type: "run_generation", nodeId: outputId, mode, prompt }],
+        ops: [
+            ...preOps,
+            addNodeOp(node),
+            ...inputs.map((input) => ({ type: "connect_nodes" as const, fromNodeId: input.id, toNodeId: outputId })),
+            ...(run ? [{ type: "run_generation" as const, nodeId: outputId, mode, prompt }] : []),
+        ],
         nodeIds: [outputId],
         alias,
         outputNodeId: outputId,
+        openNodeId: outputId,
+        run,
     };
 }
 
@@ -639,6 +674,13 @@ function compileCommand(statement: Extract<ScriptStatement, { type: "command" }>
     if (statement.name === "unname") {
         const node = commandNodeArg(commandArg(statement, 0), world);
         return { ops: [{ type: "update_node", id: node.id, metadata: { alias: undefined } }], nodeIds: [node.id] };
+    }
+
+    if (statement.name === "replay") {
+        const name = commandArg(statement, 0);
+        const node = commandNodeArg(name, world);
+        if (!node.metadata?.script) return fail("noScriptLine", { name });
+        return { ops: [], nodeIds: [node.id], refill: node.metadata.script, output: i18n.t("canvas.script.replayFilled", { name }) };
     }
 
     const ids = statement.args.map((arg) => commandNodeArg(arg.value, world).id);
@@ -871,28 +913,16 @@ export async function runScriptLine(source: string): Promise<ScriptRunResult> {
         return failure(error);
     }
 
-    let scriptSource = source;
-    if (statement.type === "rerun") {
-        const world = readScriptWorld();
-        if (!world) return failure(new CanvasScriptError("noCanvas"));
-        try {
-            const node = commandNodeArg(statement.target, world);
-            if (!node.metadata?.script) return failure(new CanvasScriptError("noScriptLine", { name: statement.target }));
-            scriptSource = node.metadata.script;
-            statement = parseScriptLine(scriptSource);
-        } catch (error) {
-            return failure(error);
-        }
-    }
-
     try {
-        const names = dependencyNames(statement);
-        if (names.length) {
-            const world = readScriptWorld();
-            if (world) {
-                const ids = names.flatMap((name) => aliasNodes(name, world.nodes).map((node) => node.id));
-                await waitForNodes(Array.from(new Set(ids)));
+        // Wait for upstream generations this line depends on, including the inputs of a `name!` run.
+        const world = readScriptWorld();
+        if (world) {
+            const ids = dependencyNames(statement).flatMap((name) => aliasNodes(name, world.nodes).map((node) => node.id));
+            if (statement.type === "rerun") {
+                const node = commandNodeArg(statement.target, world);
+                ids.push(...getGenerationResourceNodes(node.id, world.nodes, world.connections).map((input) => input.id));
             }
+            if (ids.length) await waitForNodes(Array.from(new Set(ids)));
         }
     } catch (error) {
         return failure(error);
@@ -903,7 +933,7 @@ export async function runScriptLine(source: string): Promise<ScriptRunResult> {
 
     let compiled: ScriptCompileResult;
     try {
-        compiled = compileScriptStatement(statement, scriptSource, world);
+        compiled = compileScriptStatement(statement, source, world);
     } catch (error) {
         return failure(error);
     }
@@ -922,10 +952,11 @@ export async function runScriptLine(source: string): Promise<ScriptRunResult> {
         if (!context) return failure(new CanvasScriptError("noCanvas"));
         context.applyOps(compiled.ops);
     }
-    const record = compiled.outputNodeId ? trackPending(compiled.outputNodeId) : null;
+    const record = compiled.run && compiled.outputNodeId ? trackPending(compiled.outputNodeId) : null;
     if (compiled.focusNodeId) emitCanvasEvent("script:focus", compiled.focusNodeId);
+    if (compiled.openNodeId) emitCanvasEvent("script:open-panel", compiled.openNodeId);
     const settled = record?.promise.then(() => (record.failure ? i18n.t("canvas.projectPage.generationFailed") : undefined));
-    return { status: "success", nodeIds: compiled.nodeIds, output: compiled.output, settled };
+    return { status: "success", nodeIds: compiled.nodeIds, output: compiled.output, refill: compiled.refill, settled };
 }
 
 function failure(error: unknown): ScriptRunResult {

@@ -44,10 +44,12 @@ vo   = aud("welcome to night city", voice="alloy")
 img(girl, "switch to a red jacket")      # without an assignment it is named img1, txt2, …
 ```
 
+- **Enter only creates the node, it never calls the model**: the node gets the prompt, the arguments and the input connections, and is selected with its prompt panel open, so you can adjust the prompt or arguments and press Generate there.
 - Nodes, packs and assets among the positional arguments become generation inputs; strings are joined with newlines into the prompt.
-- `{variable}` inside a prompt is interpolated: a text node is replaced by its content, while an image / video / audio node is replaced by its reference label (for example `图片1`) and added to the inputs automatically.
+- `{variable}` and `@variable` inside a prompt both become real references: `{p}` on a text node inlines its content, while `{girl}` or `@girl` on an image / video / audio node is replaced by its reference label (for example `图片1`) and added to the inputs automatically. An `@name` that cannot be resolved (an email address, `@user`) stays literal instead of failing the line.
 - Generations always create a new node. When the same variable is assigned again the previous node is renamed to `name_1`, `name_2`, … so the new node takes the variable and older results stay reachable.
-- Generations run in the background: a statement that references a still-generating variable waits for it first, and reports `dependency failed` when the upstream generation fails.
+- To run immediately, append `!`: `shot = img(girl, style)!` creates the node and generates straight away, while a bare `shot!` runs the existing node with its current prompt, arguments and inputs (waiting for any upstream generation first).
+- A statement that references a still-generating variable waits for it first, and reports `dependency failed` when the upstream generation fails.
 
 Keyword arguments (an unknown name, or one used for an unsupported type, is an error):
 
@@ -65,10 +67,11 @@ Keyword arguments (an unknown name, or one used for an unsupported type, is an e
 ## Rerunning
 
 ```python
-shot!    # re-runs the statement that created shot
+shot!                      # generate now with shot's current prompt, arguments and inputs
+shot = img(girl, style)!   # create the node and generate right away
 ```
 
-A rerun uses the **current** values of the variables it references, so editing an upstream prompt and running `shot!` uses the new version. Nodes created by hand have no recorded statement and report that they cannot be rerun.
+`shot!` never creates a node, so it is the way to run after tweaking the prompt in the panel. It also works on hand-made generation nodes (a node that is already generating asks you to wait). To get the original statement back, use `:replay shot` to refill the editor.
 
 ## Commands
 
@@ -79,6 +82,7 @@ A rerun uses the **current** values of the variables it references, so editing a
 | `:mv old new` | rename a variable |
 | `:unname name` | drop the variable, keep the node |
 | `:rm name...` | delete nodes (undoable with `:undo`) |
+| `:replay name` | refill the editor with the statement that created that node |
 | `:undo` | undo the most recent script operation |
 | `:clear` | clear the console history, leave the canvas alone |
 | `:help` | print the syntax reference |
@@ -103,6 +107,7 @@ hero = cover(girl, night)
 Right-click a selection and choose Export as script to rebuild the selected nodes plus the upstream nodes they depend on into statements appended to the editor as a draft (**nothing runs until you press Enter**).
 
 - Generations keep their prompt and `model` / `size` / `n` arguments, while image, video and audio files that cannot be expressed as statements stay as `@"title"` references.
+- Exported generations do not run either: append `!` when you want them to, or press Enter and send from the node panel.
 - Group and config nodes are reported as skipped in a comment at the top; a generation that reads its settings from a config node only exports the arguments recorded on the node itself.
 
 ## Inserting a node into the script
@@ -112,7 +117,7 @@ Right-click a selection and choose Export as script to rebuild the selected node
 ## Notes
 
 - Variable names are unique within one canvas. Deleting a node deletes its variable, and the script then reports an undefined variable.
-- Generations really call the model and consume quota exactly like pressing Generate.
+- Running a statement only creates or updates nodes; only a trailing `!`, `name!`, or Generate in the node panel actually calls the model and consumes quota.
 - Without `n`, the number of images follows the current canvas generation-count setting.
 - `:undo` only undoes the most recent script operation and shares its snapshot with the local agent; the canvas' own `Ctrl / Cmd` + `Z` is unaffected.
 - History is stored with the canvas. After a reload, entries that were still generating are re-judged from the actual node status.

@@ -31,6 +31,12 @@ test("parses lists, calls, keyword arguments and rerun", () => {
     expect(parseScriptLine('aud("欢迎来到夜之城", voice="alloy")')).toMatchObject({ value: { type: "call", name: "aud", args: [{ value: { type: "string", value: "欢迎来到夜之城" } }, { name: "voice", value: { type: "string", value: "alloy" } }] } });
 });
 
+test("a trailing `!` marks a call as run-now while `name!` stays a rerun statement", () => {
+    expect(parseScriptLine('shot = img(girl)!')).toMatchObject({ type: "assign", value: { type: "call", name: "img", run: true } });
+    expect(parseScriptLine("img(girl)")).toMatchObject({ value: { type: "call", run: false } });
+    expect(parseScriptLine("shot!")).toMatchObject({ type: "rerun", target: "shot" });
+});
+
 test("parses commands with ident and string arguments", () => {
     expect(parseScriptLine(":ls")).toMatchObject({ type: "command", name: "ls", args: [] });
     expect(parseScriptLine(":mv old new")).toMatchObject({ type: "command", name: "mv", args: [{ value: "old" }, { value: "new" }] });

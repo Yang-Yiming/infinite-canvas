@@ -33,6 +33,10 @@ function compile(source: string, w = world()) {
     return compileScriptStatement(parseScriptLine(source), source, w as never);
 }
 
+function addedNode(result: { ops: { type: string; metadata?: Record<string, unknown>; id?: string }[] }) {
+    return result.ops.find((op) => op.type === "add_node") as { id: string; metadata: Record<string, unknown> } | undefined;
+}
+
 test("binding an asset materializes a node and writes the alias", () => {
     const result = compile("girl = @角色A.png", world([], [imageAsset("a1", "角色A.png")]));
     const added = result.ops.find((op) => op.type === "add_node");
@@ -75,19 +79,66 @@ test("list assignment connects every reference into a new pack", () => {
     expect(result.ops).toHaveLength(3);
 });
 
-test("generation connects inputs, writes kwargs and interpolates media labels", () => {
+test("generation connects inputs, writes kwargs and keeps the resolved prompt on the node", () => {
     const girl = imageNode("n1", "girl");
     const result = compile('shot = img(girl, "描述{girl}的穿着", size="2:3", n=2)', world([girl]));
-    const added = result.ops.find((op) => op.type === "add_node" && op.nodeType === CanvasNodeType.Image) as { id: string; metadata: Record<string, unknown> } | undefined;
-    expect(added?.metadata).toMatchObject({ alias: "shot", size: "2:3", count: "2", generationMode: "image", script: 'shot = img(girl, "描述{girl}的穿着", size="2:3", n=2)' });
-    expect(result.ops).toContainEqual({ type: "connect_nodes", fromNodeId: "n1", toNodeId: added?.id });
-    expect(result.ops.at(-1)).toMatchObject({ type: "run_generation", nodeId: added?.id, mode: "image", prompt: `描述${imageReferenceLabel(0)}的穿着` });
+    expect(addedNode(result)?.metadata).toMatchObject({ alias: "shot", size: "2:3", count: "2", generationMode: "image", prompt: `描述${imageReferenceLabel(0)}的穿着`, script: 'shot = img(girl, "描述{girl}的穿着", size="2:3", n=2)' });
+    expect(result.ops).toContainEqual({ type: "connect_nodes", fromNodeId: "n1", toNodeId: addedNode(result)?.id });
+    // Without a trailing `!` the statement only builds the node so it can be tweaked and sent by hand.
+    expect(result.run).toBe(false);
+    expect(result.ops.some((op) => op.type === "run_generation")).toBe(false);
+    expect(result.openNodeId).toBe(addedNode(result)?.id);
+});
+
+test("a trailing `!` runs the generation right away", () => {
+    const girl = imageNode("n1", "girl");
+    const result = compile('shot = img(girl, "夜色")!', world([girl]));
+    expect(result.run).toBe(true);
+    expect(result.ops.at(-1)).toMatchObject({ type: "run_generation", nodeId: addedNode(result)?.id, mode: "image", prompt: "夜色" });
 });
 
 test("text nodes are interpolated as content instead of a label", () => {
     const p = textNode("t1", "分镜提示词", "p");
     const result = compile('shot = img("参考{p}")', world([p]));
-    expect(result.ops.at(-1)).toMatchObject({ prompt: "参考分镜提示词" });
+    expect(addedNode(result)?.metadata).toMatchObject({ prompt: "参考分镜提示词" });
+    expect(result.ops.some((op) => op.type === "connect_nodes")).toBe(false);
+});
+
+test("`@name` inside a prompt becomes a real reference, unknown ones stay literal", () => {
+    const girl = imageNode("n1", "girl");
+    const resolved = compile('shot = img("把 @girl 换成红衣服")', world([girl]));
+    expect(addedNode(resolved)?.metadata).toMatchObject({ prompt: `把 ${imageReferenceLabel(0)} 换成红衣服` });
+    expect(resolved.ops).toContainEqual({ type: "connect_nodes", fromNodeId: "n1", toNodeId: addedNode(resolved)?.id });
+
+    const literal = compile('shot = img("发给 @nobody 或 a@b.com")', world([girl]));
+    expect(addedNode(literal)?.metadata).toMatchObject({ prompt: "发给 @nobody 或 a@b.com" });
+});
+
+test("`name!` runs the existing node without creating one", () => {
+    const result = compile("shot!", world([imageNode("n2", "shot")]));
+    expect(result.ops).toEqual([{ type: "run_generation", nodeId: "n2" }]);
+    expect(result.run).toBe(true);
+    expect(result.outputNodeId).toBe("n2");
+
+    const busy = imageNode("n3", "busy");
+    busy.metadata.status = "loading";
+    expect(
+        (() => {
+            try {
+                compile("busy!", world([busy]));
+                return null;
+            } catch (error) {
+                return (error as InstanceType<typeof CanvasScriptError>).code;
+            }
+        })(),
+    ).toBe("alreadyRunning");
+});
+
+test("`:replay name` hands the stored statement back to the editor", () => {
+    const shot = imageNode("n2", "shot");
+    shot.metadata.script = 'shot = img(girl, "夜色")';
+    expect(compile(":replay shot", world([shot]))).toMatchObject({ refill: 'shot = img(girl, "夜色")', ops: [] });
+    expect(() => compile(":replay girl", world([imageNode("n1", "girl")]))).toThrow("没有可回填的原语句");
 });
 test("reassigning a generated alias renames the previous node", () => {
     const result = compile("shot = img(girl)", world([imageNode("n1", "girl"), imageNode("n2", "shot")]));
@@ -135,16 +186,16 @@ test("snippets expand parameters textually, in and out of string literals", () =
     const girl = imageNode("n1", "girl");
 
     const quoted = compile('hero = cover(girl, "夜色")', world([girl], [], [snippet]));
-    const added = quoted.ops.find((op) => op.type === "add_node") as { id: string; metadata: Record<string, unknown> } | undefined;
-    expect(added?.metadata).toMatchObject({ alias: "hero", size: "2:3", script: 'img(girl, "夜色", size="2:3")' });
-    expect(quoted.ops).toContainEqual({ type: "connect_nodes", fromNodeId: "n1", toNodeId: added?.id });
-    expect(quoted.ops.at(-1)).toMatchObject({ type: "run_generation", prompt: "夜色" });
+    expect(addedNode(quoted)?.metadata).toMatchObject({ alias: "hero", size: "2:3", prompt: "夜色", script: 'img(girl, "夜色", size="2:3")' });
+    expect(quoted.ops).toContainEqual({ type: "connect_nodes", fromNodeId: "n1", toNodeId: addedNode(quoted)?.id });
+    // The caller's trailing `!` survives snippet expansion.
+    expect(compile('hero = cover(girl, "夜色")!', world([girl], [], [snippet])).run).toBe(true);
 
     // A bare argument inside a string literal becomes literal text, and string escaping is preserved.
-    const bare = compile('hero = cover(girl, 夜色)', world([girl], [], [snippet]));
-    expect(bare.ops.at(-1)).toMatchObject({ prompt: "夜色" });
+    const bare = compile("hero = cover(girl, 夜色)", world([girl], [], [snippet]));
+    expect(addedNode(bare)?.metadata).toMatchObject({ prompt: "夜色" });
     const escaped = compile('hero = cover(girl, "a\\"b")', world([girl], [], [snippet]));
-    expect(escaped.ops.at(-1)).toMatchObject({ prompt: 'a"b' });
+    expect(addedNode(escaped)?.metadata).toMatchObject({ prompt: 'a"b' });
 });
 
 test("snippets can call other snippets but rejected calls report their reason", () => {
@@ -154,7 +205,7 @@ test("snippets can call other snippets but rejected calls report their reason", 
         { id: "s1", name: "polish", params: ["img"], template: "cover({img})" },
         { id: "s2", name: "cover", params: ["aimg"], template: 'img({aimg}, "终稿")' },
     ];
-    expect(compile("hero = polish(hero1)", world([girl, hero], [], snippets)).ops.at(-1)).toMatchObject({ prompt: "终稿" });
+    expect(addedNode(compile("hero = polish(hero1)", world([girl, hero], [], snippets)))?.metadata).toMatchObject({ prompt: "终稿" });
 
     const error = (() => {
         try {

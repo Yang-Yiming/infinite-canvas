@@ -1149,6 +1149,19 @@ function InfiniteCanvasPage() {
         };
     }, [focusNode]);
 
+    // Generation statements only create their node, so open its prompt panel for hand-tweaking and sending.
+    useEffect(() => {
+        const off = onCanvasEvent("script:open-panel", (payload) => {
+            if (typeof payload !== "string") return;
+            setSelectedNodeIds(new Set([payload]));
+            setSelectedConnectionId(null);
+            setDialogNodeId(payload);
+        });
+        return () => {
+            off();
+        };
+    }, []);
+
     useEffect(() => {
         const handleShortcut = (event: KeyboardEvent) => {
             if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "j") return;

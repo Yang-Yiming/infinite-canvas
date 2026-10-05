@@ -7,7 +7,7 @@ import i18n from "@/i18n";
 export const SCRIPT_FUNCTIONS = ["txt", "img", "vid", "aud"] as const;
 export type ScriptFunction = (typeof SCRIPT_FUNCTIONS)[number];
 
-export const SCRIPT_COMMANDS = ["ls", "focus", "mv", "unname", "rm", "undo", "clear", "help"] as const;
+export const SCRIPT_COMMANDS = ["ls", "focus", "mv", "unname", "rm", "replay", "undo", "clear", "help"] as const;
 export type ScriptCommandName = (typeof SCRIPT_COMMANDS)[number];
 
 // `:def` / `:del` / `:defs` take a raw template, so they are parsed as directives instead of commands.
@@ -19,7 +19,7 @@ export type ScriptExpr =
     | { type: "string"; value: string; from: number; to: number }
     | { type: "number"; value: number; from: number; to: number }
     | { type: "list"; items: ScriptExpr[]; from: number; to: number }
-    | { type: "call"; name: string; args: ScriptArg[]; from: number; to: number };
+    | { type: "call"; name: string; args: ScriptArg[]; run?: boolean; from: number; to: number };
 
 export type ScriptArg = { name?: string; value: ScriptExpr };
 
@@ -268,7 +268,9 @@ class Parser {
             }
         }
         const end = this.expectPunct(")");
-        return { type: "call", name: name.value, args, from: name.from, to: end.to };
+        // A trailing `!` opts this call into running the generation right away.
+        const bang = this.peek().type === "punct" && this.peek().value === "!" ? this.next() : null;
+        return { type: "call", name: name.value, args, run: Boolean(bang), from: name.from, to: bang?.to ?? end.to };
     }
 
     private parseArg(): ScriptArg {
