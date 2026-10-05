@@ -1,0 +1,118 @@
+---
+title: Canvas Script Console
+description: Drive canvas nodes, generations and reusable snippets with one statement per line
+---
+
+# Canvas Script Console
+
+The script console is a drawer at the bottom of the canvas that drives the node graph with one statement per line. It helps when dragging edges on a trackpad is painful, or when several nodes should be created at once. It is not a separate script runtime: variables are node `alias` values, every statement compiles to the same canvas operations the local agent uses, and manual canvas edits are visible to the script immediately.
+
+## Opening and interaction
+
+- Click the `>_` button in the top bar, or press `Ctrl / Cmd` + `J`, to open or collapse the console.
+- While it is open the canvas area is pushed up instead of being covered; drag the top edge to resize the drawer.
+- History sits above the input: Enter runs the statement, `Shift` + Enter adds a line, and pasting several lines runs them in order.
+- `↑` / `↓` walk the history when the input is empty or the caret is on the first / last line. Clicking a history entry refills the editor, and clicking a `$variable` chip focuses its node.
+- Nodes with a variable show a `$variable` badge next to their title, and so does the left element list.
+
+## Binding nodes and assets
+
+```python
+girl = @Portrait.png    # @ opens completions for canvas nodes, packs, My Assets and skills
+bgm  = @"Background music"   # quote names that contain spaces
+ref2 = @#image-1739     # use the node ID when titles are duplicated
+```
+
+`@` resolves in the order node variable → node title → asset title → skill title, and reports candidates when a level matches several entries. Referenced assets are materialised as canvas nodes before being connected; skills are only usable as the `skill=` argument.
+
+## Text and reference packs
+
+```python
+style = "cyberpunk, neon night, 35mm"   # creates a text node
+cast  = [girl, ref2, bgm]               # creates a reference pack connected to those inputs
+```
+
+Assigning a string again **updates the existing text node in place**, and assigning a list again **rewires the existing reference pack** instead of creating a second one.
+
+## Running generations
+
+```python
+p    = txt(cast, "write a storyboard prompt for {girl} dancing", skill=@storyboard)
+shot = img(girl, p, style, size="2:3", n=2)
+clip = vid(shot, "slow camera push in", seconds=5)
+vo   = aud("welcome to night city", voice="alloy")
+img(girl, "switch to a red jacket")      # without an assignment it is named img1, txt2, …
+```
+
+- Nodes, packs and assets among the positional arguments become generation inputs; strings are joined with newlines into the prompt.
+- `{variable}` inside a prompt is interpolated: a text node is replaced by its content, while an image / video / audio node is replaced by its reference label (for example `图片1`) and added to the inputs automatically.
+- Generations always create a new node. When the same variable is assigned again the previous node is renamed to `name_1`, `name_2`, … so the new node takes the variable and older results stay reachable.
+- Generations run in the background: a statement that references a still-generating variable waits for it first, and reports `dependency failed` when the upstream generation fails.
+
+Keyword arguments (an unknown name, or one used for an unsupported type, is an error):
+
+| Argument | Applies to | Notes |
+| --- | --- | --- |
+| `model` | all | for example `model="default::gpt-image-2"` |
+| `skill` | `txt` | a skill asset, for example `skill=@storyboard` |
+| `effort` | `txt` | reasoning effort |
+| `n` | `txt` / `img` | number of results |
+| `size` | `img` / `vid` | size or ratio, for example `size="2:3"` |
+| `quality` | `img` | quality |
+| `seconds` / `steps` | `vid` | duration and sampling steps |
+| `voice` / `speed` / `format` | `aud` | voice, speed and format |
+
+## Rerunning
+
+```python
+shot!    # re-runs the statement that created shot
+```
+
+A rerun uses the **current** values of the variables it references, so editing an upstream prompt and running `shot!` uses the new version. Nodes created by hand have no recorded statement and report that they cannot be rerun.
+
+## Commands
+
+| Command | Effect |
+| --- | --- |
+| `:ls` | list every variable (name, type, status, title) |
+| `:focus name` | focus and select that node |
+| `:mv old new` | rename a variable |
+| `:unname name` | drop the variable, keep the node |
+| `:rm name...` | delete nodes (undoable with `:undo`) |
+| `:undo` | undo the most recent script operation |
+| `:clear` | clear the console history, leave the canvas alone |
+| `:help` | print the syntax reference |
+
+## Snippets
+
+Store a common pattern as a parameterised snippet and call it like a function:
+
+```python
+:def cover(src, text) img({src}, "{text}", size="2:3")
+hero = cover(girl, night)
+:defs        # list snippets
+:del cover   # remove a snippet
+```
+
+- A snippet stores an **expression** template; the caller does the assignment (`hero = cover(...)`).
+- `{param}` inserts the argument text inside a string literal and the caller's raw source elsewhere, so `cover(girl, night)` expands to `img(girl, "night", size="2:3")`.
+- Snippets may call each other and redefining a name overwrites it. The library lives in browser storage, is not exported or synced with the canvas, and shows up as function completions.
+
+## Exporting the selection
+
+Right-click a selection and choose Export as script to rebuild the selected nodes plus the upstream nodes they depend on into statements appended to the editor as a draft (**nothing runs until you press Enter**).
+
+- Generations keep their prompt and `model` / `size` / `n` arguments, while image, video and audio files that cannot be expressed as statements stay as `@"title"` references.
+- Group and config nodes are reported as skipped in a comment at the top; a generation that reads its settings from a config node only exports the arguments recorded on the node itself.
+
+## Inserting a node into the script
+
+`Alt` + click a node, or use Insert into script in the context menu: the node is named automatically by type (`img3`, `txt2`, …) and its variable is inserted at the caret, opening the console if needed.
+
+## Notes
+
+- Variable names are unique within one canvas. Deleting a node deletes its variable, and the script then reports an undefined variable.
+- Generations really call the model and consume quota exactly like pressing Generate.
+- Without `n`, the number of images follows the current canvas generation-count setting.
+- `:undo` only undoes the most recent script operation and shares its snapshot with the local agent; the canvas' own `Ctrl / Cmd` + `Z` is unaffected.
+- History is stored with the canvas. After a reload, entries that were still generating are re-judged from the actual node status.

@@ -11,6 +11,7 @@
 ## Canvas Guide
 
 - [Canvas Node Guide](/docs/canvas/canvas-node-manual)
+- [Canvas Script Console](/docs/canvas/canvas-script-console)
 - [Canvas Shortcuts](/docs/canvas/canvas-shortcuts)
 
 ## Development and Data

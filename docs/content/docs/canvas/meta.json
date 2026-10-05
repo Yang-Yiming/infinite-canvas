@@ -2,5 +2,5 @@
   "title": "Canvas Guide",
   "root": true,
   "defaultOpen": true,
-  "pages": ["canvas-node-manual", "canvas-shortcuts"]
+  "pages": ["canvas-node-manual", "canvas-script-console", "canvas-shortcuts"]
 }
