@@ -4,6 +4,7 @@ import i18n from "@/i18n";
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 import { emitCanvasEvent, onCanvasEvent } from "@/lib/canvas/canvas-event-bus";
 import { fitNodeSize } from "@/lib/canvas/canvas-node-size";
+import { isNodeInScriptView, placeScriptNode } from "@/lib/canvas/canvas-script-layout";
 import { parseScriptLine, SCRIPT_FUNCTIONS, ScriptParseError, type ScriptExpr, type ScriptFunction, type ScriptStatement } from "@/lib/canvas/canvas-script-parser";
 import { buildNodeMentionReferences, getGenerationResourceNodes } from "@/lib/canvas/canvas-resource-references";
 import { getNodeSpec } from "@/lib/canvas/node-registry";
@@ -11,7 +12,7 @@ import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasScriptSnippetStore, type CanvasScriptSnippet } from "@/stores/canvas/use-canvas-script-snippet-store";
 import { useCanvasScriptStore } from "@/stores/canvas/use-canvas-script-store";
 import { useAssetStore, type Asset } from "@/stores/use-asset-store";
-import { CanvasNodeType, type CanvasConnection, type CanvasGenerationMode, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTypeId, type Position, type ViewportTransform } from "@/types/canvas";
+import { CanvasNodeType, type CanvasConnection, type CanvasGenerationMode, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTypeId, type ViewportTransform } from "@/types/canvas";
 
 // Canvas script console runtime: the node graph is the only state, every statement compiles to
 // CanvasAgentOp[] and goes through the same applyOps channel as the local Agent.
@@ -144,35 +145,6 @@ const ALIAS_PREFIXES: Partial<Record<CanvasNodeTypeId, string>> = {
 // Used by `Alt + 点击` and the node context menu before inserting a node into the console.
 export function autoAliasForNode(node: CanvasNodeData, nodes: CanvasNodeData[]) {
     return node.metadata?.alias || nextFreeAlias(ALIAS_PREFIXES[node.type] || "node", nodes);
-}
-
-// ---------------------------------------------------------------------------
-// Layout
-
-function rectsOverlap(a: { x: number; y: number; width: number; height: number }, b: CanvasNodeData) {
-    return a.x < b.position.x + b.width && a.x + a.width > b.position.x && a.y < b.position.y + b.height && a.y + a.height > b.position.y;
-}
-
-export function placeScriptNode(inputs: CanvasNodeData[], size: { width: number; height: number }, nodes: CanvasNodeData[], viewport: ViewportTransform, canvas: { width: number; height: number }): Position {
-    let position: Position;
-    if (inputs.length) {
-        const right = Math.max(...inputs.map((node) => node.position.x + node.width));
-        const top = Math.min(...inputs.map((node) => node.position.y));
-        const bottom = Math.max(...inputs.map((node) => node.position.y + node.height));
-        position = { x: right + 96, y: (top + bottom) / 2 - size.height / 2 };
-    } else {
-        const centerX = (canvas.width / 2 - viewport.x) / viewport.k;
-        const centerY = (canvas.height / 2 - viewport.y) / viewport.k;
-        position = { x: centerX - size.width / 2, y: centerY - size.height / 2 };
-    }
-
-    for (let guard = 0; guard < 200; guard += 1) {
-        const rect = { ...position, width: size.width, height: size.height };
-        const hit = nodes.find((node) => rectsOverlap(rect, node));
-        if (!hit) break;
-        position = { x: position.x, y: hit.position.y + hit.height + 32 };
-    }
-    return position;
 }
 
 // ---------------------------------------------------------------------------
@@ -950,7 +922,11 @@ export async function runScriptLine(source: string): Promise<ScriptRunResult> {
     if (compiled.ops.length) {
         const context = useAgentStore.getState().canvasContext;
         if (!context) return failure(new CanvasScriptError("noCanvas"));
-        context.applyOps(compiled.ops);
+        const createdId = [...compiled.ops].reverse().find((op): op is Extract<CanvasAgentOp, { type: "add_node" }> => op.type === "add_node" && Boolean(op.id))?.id;
+        const next = context.applyOps(compiled.ops);
+        const created = createdId ? next.nodes.find((node) => node.id === createdId) : undefined;
+        // Placement prefers the visible canvas, but a full viewport pushes the node outside; pan to keep it in sight.
+        if (created && !isNodeInScriptView(created, next.viewport, useCanvasScriptStore.getState().canvasSize)) emitCanvasEvent("script:reveal", created.id);
     }
     const record = compiled.run && compiled.outputNodeId ? trackPending(compiled.outputNodeId) : null;
     if (compiled.focusNodeId) emitCanvasEvent("script:focus", compiled.focusNodeId);

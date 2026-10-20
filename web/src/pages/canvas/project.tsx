@@ -1098,6 +1098,21 @@ function InfiniteCanvasPage() {
         setContextMenu(null);
     }, [size.height, size.width]);
 
+    const animateViewport = useCallback((target: ViewportTransform, duration = 450) => {
+        if (focusAnimRef.current) cancelAnimationFrame(focusAnimRef.current);
+        const start = { ...viewportRef.current };
+        const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+        let startTime: number | null = null;
+        const step = (now: number) => {
+            if (startTime === null) startTime = now;
+            const progress = Math.min((now - startTime) / duration, 1);
+            const t = easeOutCubic(progress);
+            setViewport({ x: start.x + (target.x - start.x) * t, y: start.y + (target.y - start.y) * t, k: start.k + (target.k - start.k) * t });
+            focusAnimRef.current = progress < 1 ? requestAnimationFrame(step) : null;
+        };
+        focusAnimRef.current = requestAnimationFrame(step);
+    }, []);
+
     const focusNode = useCallback(
         (nodeId: string) => {
             const node = nodesRef.current.find((item) => item.id === nodeId);
@@ -1105,26 +1120,42 @@ function InfiniteCanvasPage() {
             const worldX = node.position.x + node.width / 2;
             const worldY = node.position.y + node.height / 2;
             const k = Math.min(Math.max(Math.min((size.width * 0.6) / node.width, (size.height * 0.6) / node.height), 0.05), 1);
-            const target = { x: size.width / 2 - worldX * k, y: size.height / 2 - worldY * k, k };
             setSelectedNodeIds(new Set([nodeId]));
             setSelectedConnectionId(null);
             setContextMenu(null);
-
-            if (focusAnimRef.current) cancelAnimationFrame(focusAnimRef.current);
-            const start = { ...viewportRef.current };
-            const duration = 450;
-            const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-            let startTime: number | null = null;
-            const step = (now: number) => {
-                if (startTime === null) startTime = now;
-                const progress = Math.min((now - startTime) / duration, 1);
-                const t = easeOutCubic(progress);
-                setViewport({ x: start.x + (target.x - start.x) * t, y: start.y + (target.y - start.y) * t, k: start.k + (target.k - start.k) * t });
-                focusAnimRef.current = progress < 1 ? requestAnimationFrame(step) : null;
-            };
-            focusAnimRef.current = requestAnimationFrame(step);
+            animateViewport({ x: size.width / 2 - worldX * k, y: size.height / 2 - worldY * k, k });
         },
-        [size.height, size.width],
+        [animateViewport, size.height, size.width],
+    );
+
+    // Script nodes are placed near their inputs; pan just enough to keep one that landed outside the canvas in sight.
+    const revealNode = useCallback(
+        (nodeId: string) => {
+            const node = nodesRef.current.find((item) => item.id === nodeId);
+            if (!node) return;
+            const viewport = viewportRef.current;
+            const viewWidth = size.width / viewport.k;
+            const viewHeight = size.height / viewport.k;
+            const left = -viewport.x / viewport.k;
+            const top = -viewport.y / viewport.k;
+            const pad = 24;
+            let dx = 0;
+            let dy = 0;
+
+            if (node.width + pad * 2 <= viewWidth && node.height + pad * 2 <= viewHeight) {
+                if (node.position.x < left + pad) dx = left + pad - node.position.x;
+                else if (node.position.x + node.width > left + viewWidth - pad) dx = left + viewWidth - pad - (node.position.x + node.width);
+                if (node.position.y < top + pad) dy = top + pad - node.position.y;
+                else if (node.position.y + node.height > top + viewHeight - pad) dy = top + viewHeight - pad - (node.position.y + node.height);
+            } else {
+                dx = left + viewWidth / 2 - (node.position.x + node.width / 2);
+                dy = top + viewHeight / 2 - (node.position.y + node.height / 2);
+            }
+
+            if (!dx && !dy) return;
+            animateViewport({ x: viewport.x - dx * viewport.k, y: viewport.y - dy * viewport.k, k: viewport.k }, 300);
+        },
+        [animateViewport, size.height, size.width],
     );
 
     useEffect(() => () => void (focusAnimRef.current && cancelAnimationFrame(focusAnimRef.current)), []);
@@ -1148,6 +1179,15 @@ function InfiniteCanvasPage() {
             off();
         };
     }, [focusNode]);
+
+    useEffect(() => {
+        const off = onCanvasEvent("script:reveal", (payload) => {
+            if (typeof payload === "string") revealNode(payload);
+        });
+        return () => {
+            off();
+        };
+    }, [revealNode]);
 
     // Generation statements only create their node, so open its prompt panel for hand-tweaking and sending.
     useEffect(() => {

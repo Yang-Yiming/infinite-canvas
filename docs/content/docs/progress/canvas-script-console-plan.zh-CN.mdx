@@ -166,11 +166,13 @@ arg     := IDENT "=" expr | expr
 
 ### 自动布局
 
-新节点的位置在 `lib/canvas/canvas-script.ts` 的 `placeScriptNode(inputs, size, nodes, viewport)` 中计算：
+新节点的位置在 `lib/canvas/canvas-script-layout.ts` 的 `placeScriptNode(inputs, size, nodes, viewport, canvas)` 中计算：
 
-1. 有输入时：`x = max(输入右边缘) + 96`，`y = 输入纵向中心 - size.height / 2`（96 与 `handleGenerateNode` 的子节点间距一致）。
-2. 无输入时：放在当前视口中心（用 snapshot 的 `viewport` 加 `window` 尺寸换算）。
-3. 与已有节点矩形相交时向下平移 `相交节点底边 + 32`，循环到不相交为止。
+1. 有输入时：优先放在输入组右侧 `max(输入右边缘) + 96`，`y` 取所有输入中心点的平均值再减半个节点高（96 与 `handleGenerateNode` 的子节点间距一致）；右侧放不进可视区时改试左侧；两侧都放不进时把右侧锚点夹进可视区。
+2. 无输入时：放在当前可视区中心（`viewport` 加画布区域尺寸换算，四周留 48px）。
+3. 从锚点出发按“同一列向下、向上，再换下一列”搜索空位；无输入的节点按“同一行向右、向左，再换下一行”搜索。节点间距 32px，原来“只向下平移”的逻辑已移除。
+4. 优先选择完整落在可视区内的候选；输入仍在可视区内时保留 96px 间距，即使输出略微超出视口也交给视角跟随；输入完全在视口外时才把锚点夹回可视区边缘。
+5. 视口排满时允许放到视口外，并沿可见的列换行，保证批量节点仍然成行成列；新节点落点在可视区外时，`runScriptLine` 发送 `script:reveal`，画布页只做最小平移把节点带回视野（不改变缩放）。
 
 尺寸使用 `getNodeSpec(type)` 的默认宽高。
 
@@ -231,16 +233,17 @@ type CanvasScriptEntry = {
 | 文件 | 内容 |
 |---|---|
 | `web/src/lib/canvas/canvas-script-parser.ts` | tokenizer、递归下降解析器、AST 类型、`ScriptParseError` |
-| `web/src/lib/canvas/canvas-script.ts` | 求值、`@` 解析、ops 编译、`SCRIPT_KWARGS`、`placeScriptNode`、`pending`、`waitForNodes`、命令实现 |
+| `web/src/lib/canvas/canvas-script.ts` | 求值、`@` 解析、ops 编译、`SCRIPT_KWARGS`、`pending`、`waitForNodes`、命令实现 |
+| `web/src/lib/canvas/canvas-script-layout.ts` | 新节点自动布局：输入锚点、可视区换算、网格候选搜索 |
 | `web/src/components/canvas/canvas-script-console.tsx` | 抽屉、历史列表、CodeMirror 编辑器、高亮 |
 | `web/src/components/canvas/canvas-script-completion.ts` | 补全源 |
 | `web/src/stores/canvas/use-canvas-script-store.ts` | 抽屉开关、高度 |
-| `web/src/pages/canvas/project.tsx` | 挂载控制台；`Cmd+J`；订阅 `script:focus`；`Alt+点击` 和右键菜单「插入到脚本」 |
+| `web/src/pages/canvas/project.tsx` | 挂载控制台；`Cmd+J`；订阅 `script:focus`、`script:reveal`；`Alt+点击` 和右键菜单「插入到脚本」 |
 | `web/src/components/canvas/canvas-node.tsx`、`canvas-side-panel.tsx` | alias 徽标 |
 | `web/src/types/canvas.ts`、`use-canvas-store.ts` | 数据结构 |
 | `web/src/i18n/locales/zh-CN.ts`、`en-US.ts` | 文案 |
 
-`canvas-script.ts` 与 `canvas-script-parser.ts` 是纯函数为主（除 `pending` / `waitForNodes`），在 `web/src/lib/canvas/` 下配 `bun test` 单元测试（`canvas-script-parser.test.ts`、`canvas-script.test.ts`：解析、`@` 解析、ops 编译、布局）。
+`canvas-script.ts` 与 `canvas-script-parser.ts` 是纯函数为主（除 `pending` / `waitForNodes`），在 `web/src/lib/canvas/` 下配 `bun test` 单元测试；目前 `canvas-script-layout.test.ts` 覆盖自动布局，解析、`@` 解析与 ops 编译测试可后续补齐。
 
 ## 分阶段
 
