@@ -10,6 +10,7 @@ The script console is a drawer at the bottom of the canvas that drives the node 
 ## Opening and interaction
 
 - Click the `>_` button in the top bar, or press `Ctrl / Cmd` + `J`, to open or collapse the console.
+- The `?` button at the top right of the console opens the full syntax reference; `:help` prints the same cheat sheet into the history.
 - While it is open the canvas area is pushed up instead of being covered; drag the top edge to resize the drawer.
 - History sits above the input: Enter runs the statement, `Shift` + Enter adds a line, and pasting several lines runs them in order.
 - `↑` / `↓` walk the history when the input is empty or the caret is on the first / last line. Clicking a history entry refills the editor, and clicking a `$variable` chip focuses its node.
@@ -63,6 +64,14 @@ Keyword arguments (an unknown name, or one used for an unsupported type, is an e
 | `quality` | `img` | quality |
 | `seconds` / `steps` | `vid` | duration and sampling steps |
 | `voice` / `speed` / `format` | `aud` | voice, speed and format |
+
+## Completion and syntax help
+
+- Accepting `txt` / `img` / `vid` / `aud` inserts the common arguments with their current defaults, for example `img(▮, size="4:3", n=1)`, `vid(▮, size="4:3", seconds=6)` (video shares the canvas size setting) and `aud(▮, voice="alloy", speed=1)`.
+- The caret starts on the prompt; `Tab` / `Shift+Tab` move between argument values, typing replaces the selected default, and `Esc` ends the placeholder session.
+- Only common arguments are filled in. Type the first letters of `model`, `quality`, `steps` and the like when you need them; completion offers the current values and defaults.
+- Accepting a `:def` snippet inserts one `Tab` stop per parameter, using the parameter name as the placeholder.
+- The `?` button at the top right of the console opens the full syntax reference; `:help` prints the same cheat sheet into the history.
 
 ## Rerunning
 
@@ -118,6 +127,6 @@ Right-click a selection and choose Export as script to rebuild the selected node
 
 - Variable names are unique within one canvas. Deleting a node deletes its variable, and the script then reports an undefined variable.
 - Running a statement only creates or updates nodes; only a trailing `!`, `name!`, or Generate in the node panel actually calls the model and consumes quota.
-- Without `n`, the number of images follows the current canvas generation-count setting.
+- Without `n`, the number of images follows the current canvas generation-count setting (1 by default).
 - `:undo` only undoes the most recent script operation and shares its snapshot with the local agent; the canvas' own `Ctrl / Cmd` + `Z` is unaffected.
 - History is stored with the canvas. After a reload, entries that were still generating are re-judged from the actual node status.

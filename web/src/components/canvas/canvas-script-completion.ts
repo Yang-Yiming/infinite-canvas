@@ -1,16 +1,15 @@
-import { autocompletion, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
-import type { EditorView } from "@codemirror/view";
+import { autocompletion, snippet, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 
 import i18n from "@/i18n";
 import { SCRIPT_FUNCTION_MODES, SCRIPT_KWARGS } from "@/lib/canvas/canvas-script";
 import { SCRIPT_COMMANDS, SCRIPT_DIRECTIVES, SCRIPT_FUNCTIONS, type ScriptFunction } from "@/lib/canvas/canvas-script-parser";
 import { buildCanvasResourceReferences } from "@/lib/canvas/canvas-resource-references";
 import { previewUrlFor } from "@/services/image-storage";
-import { modelOptionLabel, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
+import { defaultConfig, modelOptionLabel, resolveModelForCapability, selectableModelsByCapability, useConfigStore } from "@/stores/use-config-store";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { assetCoverUrl, useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { useCanvasScriptSnippetStore } from "@/stores/canvas/use-canvas-script-snippet-store";
-import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData } from "@/types/canvas";
 
 type ScriptIconKind = "image" | "text" | "video" | "audio" | "pack" | "skill" | "function" | "command" | "kwarg";
 
@@ -80,8 +79,60 @@ function assetOptions(assets: Asset[], skillOnly: boolean): ScriptCompletion[] {
         );
 }
 
+// Only the parameters people usually change are filled in; the rest stay available through completion.
+const FUNCTION_COMPLETION_KWARGS: Record<ScriptFunction, string[]> = {
+    txt: ["effort"],
+    img: ["size", "n"],
+    vid: ["size", "seconds"],
+    aud: ["voice", "speed"],
+};
+
+function kwargDefault(name: string, mode: CanvasGenerationMode): string | undefined {
+    const config = useConfigStore.getState().config;
+    switch (name) {
+        case "model":
+            return resolveModelForCapability(config, undefined, mode);
+        case "effort":
+            return config.reasoningEffort || defaultConfig.reasoningEffort;
+        case "n":
+            return mode === "image" ? config.canvasImageCount || config.count || defaultConfig.canvasImageCount : "1";
+        case "size":
+            return config.size || defaultConfig.size;
+        case "quality":
+            return config.quality || defaultConfig.quality;
+        case "seconds":
+            return config.videoSeconds || defaultConfig.videoSeconds;
+        case "steps":
+            return config.videoSteps || undefined;
+        case "voice":
+            return config.audioVoice || defaultConfig.audioVoice;
+        case "speed":
+            return config.audioSpeed || defaultConfig.audioSpeed;
+        case "format":
+            return config.audioFormat || defaultConfig.audioFormat;
+    }
+    return undefined;
+}
+
+// Builds a tab-stop template like `size="${2:4:3}"`, keeping only the value selectable.
+function kwargTemplate(name: string, mode: CanvasGenerationMode, field: number) {
+    const value = kwargDefault(name, mode);
+    if (value === undefined || value === "") return `${name}=\${${field}}`;
+    const placeholder = `\${${field}:${value.replace(/[\\{}]/g, "\\$&")}}`;
+    return /^-?\d+(\.\d+)?$/.test(value) ? `${name}=${placeholder}` : `${name}="${placeholder}"`;
+}
+
+function functionSnippet(name: ScriptFunction) {
+    const mode = SCRIPT_FUNCTION_MODES[name];
+    const args = [`\${1}`, ...FUNCTION_COMPLETION_KWARGS[name].map((kwarg, index) => kwargTemplate(kwarg, mode, index + 2))];
+    return snippet(`${name}(${args.join(", ")})`);
+}
+
 function functionOptions(): ScriptCompletion[] {
-    const snippets = useCanvasScriptSnippetStore.getState().snippets.map((snippet): ScriptCompletion => ({ label: snippet.name, detail: `:def ${snippet.name}(${snippet.params.join(", ")}) ${snippet.template}`, type: "function", scriptIcon: "function", apply: `${snippet.name}()` }));
+    const snippets = useCanvasScriptSnippetStore.getState().snippets.map((item): ScriptCompletion => {
+        const args = item.params.map((param, index) => `\${${index + 1}:${param}}`).join(", ");
+        return { label: item.name, detail: `:def ${item.name}(${item.params.join(", ")}) ${item.template}`, type: "function", scriptIcon: "function", apply: snippet(`${item.name}(${args})`) };
+    });
     return [
         ...SCRIPT_FUNCTIONS.map(
             (name): ScriptCompletion => ({
@@ -89,7 +140,7 @@ function functionOptions(): ScriptCompletion[] {
                 detail: i18n.t(`canvas.script.modes.${SCRIPT_FUNCTION_MODES[name]}`),
                 type: "function",
                 scriptIcon: "function",
-                apply: (view: EditorView, _completion, from: number, to: number) => view.dispatch({ changes: { from, to, insert: `${name}()` }, selection: { anchor: from + name.length + 1 } }),
+                apply: functionSnippet(name),
             }),
         ),
         ...snippets,
@@ -104,7 +155,7 @@ function kwargOptions(fn: ScriptFunction): ScriptCompletion[] {
     const mode = SCRIPT_FUNCTION_MODES[fn];
     return Object.entries(SCRIPT_KWARGS)
         .filter(([, spec]) => spec.modes.includes(mode))
-        .map(([name]): ScriptCompletion => ({ label: name, detail: "=", type: "property", scriptIcon: "kwarg", apply: `${name}=` }));
+        .map(([name]): ScriptCompletion => ({ label: name, detail: "=", type: "property", scriptIcon: "kwarg", apply: snippet(kwargTemplate(name, mode, 1)) }));
 }
 
 function kwargValueOptions(fn: ScriptFunction, name: string, quoted: boolean): ScriptCompletion[] {

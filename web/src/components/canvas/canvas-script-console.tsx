@@ -3,6 +3,8 @@ import { StreamLanguage } from "@codemirror/language";
 import { Prec } from "@codemirror/state";
 import { EditorView, hoverTooltip } from "@codemirror/view";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import { Modal } from "antd";
+import { HelpCircle } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -144,6 +146,7 @@ export function CanvasScriptConsole({ projectId }: { projectId: string }) {
     const nodes = useCanvasStore((state) => state.projects.find((project) => project.id === projectId)?.nodes) ?? EMPTY_NODES;
     const colorTheme = useThemeStore((state) => state.theme);
     const [value, setValue] = useState("");
+    const [helpOpen, setHelpOpen] = useState(false);
     const editorRef = useRef<ReactCodeMirrorRef>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const historyIndexRef = useRef(-1);
@@ -284,7 +287,17 @@ export function CanvasScriptConsole({ projectId }: { projectId: string }) {
     return (
         <div className="relative flex shrink-0 flex-col border-t" style={{ height, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }} data-canvas-no-zoom data-canvas-shortcuts-ignore>
             <div className="absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize" onPointerDown={startResize} title={t("canvas.script.resize")} />
-            <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-2 font-mono text-[11px] leading-5">
+            <button
+                type="button"
+                className="absolute right-2 top-1.5 z-10 rounded p-1 transition hover:bg-black/5 dark:hover:bg-white/10"
+                style={{ color: theme.node.muted }}
+                title={t("canvas.script.helpTitle")}
+                aria-label={t("canvas.script.helpTitle")}
+                onClick={() => setHelpOpen(true)}
+            >
+                <HelpCircle className="size-3.5" />
+            </button>
+            <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-2 pl-3 pr-8 font-mono text-[11px] leading-5">
                 {entries.length ? entries.map((entry) => <ScriptEntryRow key={entry.id} entry={entry} nodes={nodes} onReuse={setValue} />) : <div style={{ color: theme.node.muted }}>{t("canvas.script.empty")}</div>}
             </div>
             <div className="shrink-0" style={{ borderTop: `1px solid ${theme.toolbar.border}` }}>
@@ -301,6 +314,9 @@ export function CanvasScriptConsole({ projectId }: { projectId: string }) {
                     style={{ fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
                 />
             </div>
+            <Modal title={t("canvas.script.helpTitle")} open={helpOpen} onCancel={() => setHelpOpen(false)} footer={null} centered width={640}>
+                <pre className="max-h-[65vh] overflow-auto whitespace-pre-wrap font-mono text-xs leading-5" style={{ color: theme.node.text }}>{t("canvas.script.helpText")}</pre>
+            </Modal>
         </div>
     );
 }
